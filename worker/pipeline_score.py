@@ -17,20 +17,19 @@ def _load_environment(conn) -> dict:
         return {row["cell_id"]: row for row in cur.fetchall()}
 
 
-def rebuild_fine_cells(conn) -> int:
-    """Rebuild the 1 km precise-record layer (exact points never leave the DB)."""
+def rebuild_derived(conn) -> int:
+    """Kenprecisie toe en ververs de recente meldingen."""
     with conn.cursor() as cur:
         cur.execute(grid.SQL_BACKFILL_PRECISION, {"inat": INATURALIST_DATASET})
-        cur.execute(grid.SQL_REBUILD_FINE_CELLS)
         cur.execute(grid.SQL_REBUILD_RECENT_REPORTS)
-        cur.execute("SELECT count(*) AS n FROM fine_cells")
+        cur.execute("SELECT count(*) AS n FROM recent_reports")
         count = cur.fetchone()["n"]
     conn.commit()
     return count
 
 
 def recompute(conn) -> int:
-    rebuild_fine_cells(conn)
+    rebuild_derived(conn)
     with conn.cursor() as cur:
         cur.execute(grid.SQL_CELL_GUILD_AGG)
         rows = cur.fetchall()

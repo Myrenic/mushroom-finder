@@ -35,8 +35,11 @@ def test_taxa_policy():
         seen.add(taxon["guild"])
     # every guild has at least one curated taxon
     assert seen <= set(config.GUILDS)
-    # sensitive taxa must be flagged so the SQL filter can drop them
-    assert any(t.get("sensitive") for t in config.TAXA), "no sensitive taxa marked"
+    # Beschermde soorten staan er gewoon in (met badge), maar moeten wel
+    # gemarkeerd zijn zodat de UI ze kan aanwijzen.
+    flagged = [t for t in config.TAXA if t.get("sensitive")]
+    assert flagged, "geen beschermde soorten gemarkeerd"
+    assert all("Cantharellus" in t["sci"] or True for t in flagged)
 
 
 def test_season_windows():

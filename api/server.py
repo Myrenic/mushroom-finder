@@ -54,8 +54,9 @@ MIN_SEASONAL = 0.10
 
 # De pagina is publiek en alleen-lezen. Deze remmen beschermen de pod en de
 # externe diensten (Nominatim staat max 1 verzoek per seconde toe).
-API_LIMIT = RateLimiter(limit=180, window_s=60)
-SEARCH_LIMIT = RateLimiter(limit=20, window_s=60)
+API_LIMIT = RateLimiter(limit=60, window_s=60)
+SEARCH_LIMIT = RateLimiter(limit=6, window_s=60)
+GLOBAL_LIMIT = RateLimiter(limit=900, window_s=60)
 EXPECT_CACHE = TTLCache(ttl_s=900, max_items=2000)
 
 
@@ -233,20 +234,20 @@ WITH me AS (
 ),
 local AS (
     SELECT s.id, s.name_nl, s.scientific_name, s.guild, s.photo_value,
-           s.image_url, s.image_credit, s.image_credit_url,
+           s.image_url, s.image_credit, s.image_credit_url, s.sensitive,
            count(*) AS n, max(o.observed_on) AS last_seen
     FROM occurrences o
     JOIN species s ON s.id = o.species_id
     CROSS JOIN me
-    WHERE s.enabled AND NOT s.sensitive AND o.geom IS NOT NULL
+    WHERE s.enabled AND o.geom IS NOT NULL
       AND ST_DWithin(o.geom::geography, me.g, %(radius_m)s)
-    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
 ),
 weeks AS (
     SELECT s.id AS sid, date_part('week', o.observed_on)::int AS wk, count(*) AS c
     FROM occurrences o
     JOIN species s ON s.id = o.species_id
-    WHERE s.enabled AND NOT s.sensitive AND o.observed_on IS NOT NULL
+    WHERE s.enabled AND o.observed_on IS NOT NULL
     GROUP BY 1, 2
 ),
 prof AS (
@@ -254,7 +255,7 @@ prof AS (
     FROM weeks GROUP BY sid
 )
 SELECT l.id, l.name_nl, l.scientific_name, l.guild, l.photo_value,
-       l.image_url, l.image_credit, l.image_credit_url,
+       l.image_url, l.image_credit, l.image_credit_url, l.sensitive,
        l.n, l.last_seen, p.wks, p.cnts
 FROM local l
 LEFT JOIN prof p ON p.sid = l.id
@@ -349,6 +350,7 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
             "guild": row["guild"],
             "guild_label": GUILDS.get(row["guild"], row["guild"]),
             "photo_value": row["photo_value"],
+            "sensitive": bool(row["sensitive"]),
             "image_url": row["image_url"],
             "image_credit": row["image_credit"],
             "image_credit_url": row["image_credit_url"],
@@ -398,7 +400,7 @@ def recent_reports(conn, guild: str | None, days: int, limit: int) -> list[dict]
         cur.execute(
             """
             SELECT id, guild, name_nl, scientific_name, observed_on,
-                   resolution_m, precise, lat, lon
+                   resolution_m, precise, sensitive, lat, lon
             FROM recent_reports
             {clause}
             ORDER BY observed_on DESC, name_nl
@@ -417,6 +419,7 @@ def recent_reports(conn, guild: str | None, days: int, limit: int) -> list[dict]
         "days_ago": (dt.date.today() - r["observed_on"]).days,
         "resolution_m": r["resolution_m"],
         "precise": r["precise"],
+        "sensitive": bool(r["sensitive"]),
         "lat": r["lat"],
         "lon": r["lon"],
     } for r in rows]
@@ -458,17 +461,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def _identity(self) -> dict:
-        email = self.headers.get("X-Auth-Request-Email", "")
-        user = self.headers.get("X-Auth-Request-User", "")
-        groups = self.headers.get("X-Auth-Request-Groups", "")
-        return {
-            "email": email,
-            "user": user,
-            "groups": [g.strip() for g in groups.split(",") if g.strip()],
-            "authenticated": bool(email or user),
-        }
-
     def _client_ip(self) -> str:
         # nginx en Traefik zetten X-Forwarded-For; de eerste is de bezoeker.
         forwarded = self.headers.get("X-Forwarded-For", "")
@@ -482,10 +474,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 return self._send(200, {"status": "ok"})
-            if path == "/api/me":
-                return self._send(200, self._identity())
 
             ip = self._client_ip()
+            if not GLOBAL_LIMIT.allow("alle"):
+                return self._send(429, {"error": "te druk, probeer het zo weer"})
             if path == "/api/search" and not SEARCH_LIMIT.allow(ip):
                 return self._send(429, {"error": "te veel zoekopdrachten, probeer het zo weer"})
             if not API_LIMIT.allow(ip):

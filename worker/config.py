@@ -56,7 +56,9 @@ SEASON = {
 # sci  = scientific name resolved via the GBIF species/match API
 # nl   = Dutch common name shown in the UI
 # guild, photo = photography value 1..5
-# sensitive=True taxa are excluded from all fine-grained output.
+# sensitive=True means wettelijk beschermd of op de Rode Lijst. Die soorten
+# staan er gewoon in, maar krijgen in de app een badge. Laat deze lijst door
+# een mycologist controleren voordat je hem vertrouwt.
 TAXA = [
     # Wood-decayers
     {"sci": "Trametes versicolor", "nl": "Gewoon elfenbankje", "guild": "wood", "photo": 4},
@@ -83,7 +85,7 @@ TAXA = [
     {"sci": "Marasmius oreades", "nl": "Weidekringzwam", "guild": "litter", "photo": 3},
     # Wet ground
     {"sci": "Mycena galopus", "nl": "Melksteelmycena", "guild": "wet", "photo": 2},
-    {"sci": "Galerina marginata", "nl": "Bundelmosklokje", "guild": "wet", "photo": 2, "sensitive": True},
+    {"sci": "Galerina marginata", "nl": "Bundelmosklokje", "guild": "wet", "photo": 2},
     # Grassland
     {"sci": "Cuphophyllus virgineus", "nl": "Sneeuwzwammetje", "guild": "grassland", "photo": 3},
     {"sci": "Hygrocybe pratensis", "nl": "Weidewasplaat", "guild": "grassland", "photo": 4},
@@ -106,8 +108,7 @@ TAXA = [
     {"sci": "Gliophorus psittacinus", "nl": "Papegaaizwammetje", "guild": "grassland", "photo": 4},
     {"sci": "Hygrocybe acutoconica", "nl": "Puntmutswasplaat", "guild": "grassland", "photo": 3},
     {"sci": "Xylaria hypoxylon", "nl": "Geweizwammetje", "guild": "wood", "photo": 3},
-    # Legally protected in the Netherlands; kept in the taxon list so the
-    # record exists, but flagged sensitive so it never appears in rankings.
+    # Wettelijk beschermd in Nederland. Staat er gewoon bij, met badge.
     {"sci": "Cantharellus cibarius", "nl": "Cantharel (Hanenkam)", "guild": "mycorrhizal",
      "photo": 5, "sensitive": True},
 ]

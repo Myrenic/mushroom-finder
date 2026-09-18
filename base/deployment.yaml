@@ -19,6 +19,8 @@ spec:
     spec:
       # Alleen-lezen API: geen Kubernetes-toegang nodig.
       automountServiceAccountToken: false
+      # Geen service-links: scheelt een berg env-vars die niets toevoegen.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         fsGroup: 1000
@@ -83,6 +85,7 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+            readOnlyRootFilesystem: true
         # API: serves hotspots/weather/refresh state and triggers refresh Jobs
         # through the Kubernetes API using its narrowly-scoped ServiceAccount.
         - name: api
@@ -132,6 +135,12 @@ spec:
               path: /api/health
               port: api
             initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 30
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -140,6 +149,7 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+            readOnlyRootFilesystem: true
       volumes:
         - name: webui
           configMap:

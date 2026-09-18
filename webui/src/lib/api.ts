@@ -8,13 +8,6 @@
 
 const API = "/api"
 
-export interface Me {
-  email: string
-  user: string
-  groups: string[]
-  authenticated: boolean
-}
-
 export interface Place {
   id: string
   name: string
@@ -55,6 +48,8 @@ export interface ExpectSpecies {
   confidence: number
   phase: string
   reasons: string[]
+  /** Beschermd of Rode Lijst-soort. */
+  sensitive: boolean
   image_url: string | null
   image_credit: string | null
   image_credit_url: string | null
@@ -86,6 +81,7 @@ export interface RecentReport {
   days_ago: number
   resolution_m: number
   precise: boolean
+  sensitive: boolean
   lat: number
   lon: number
 }
@@ -113,7 +109,6 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export const fetchMe = () => api<Me>("/me")
 export const fetchMeta = () => api<Meta>("/meta")
 
 export const searchPlaces = (q: string) =>

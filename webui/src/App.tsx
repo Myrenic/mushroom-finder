@@ -5,16 +5,13 @@ import { Badge } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { MushroomIcon } from "@/components/MushroomIcon"
-import { MapView } from "@/components/MapView"
 import {
   distanceKm,
   fetchExpect,
-  fetchMe,
   fetchMeta,
   fetchRecent,
   searchPlaces,
   type ExpectResult,
-  type Me,
   type Meta,
   type Place,
   type RecentReport,
@@ -91,7 +88,6 @@ function phaseTone(seasonal: number): string {
 
 export function App() {
   const { theme, setTheme } = useTheme()
-  const [me, setMe] = useState<Me | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,11 +119,6 @@ export function App() {
 
   useEffect(() => {
     ;(async () => {
-      try {
-        setMe(await fetchMe())
-      } catch {
-        /* read-only browsing is fine without identity */
-      }
       await loadMeta()
       try {
         setRecent((await fetchRecent(90)).reports)
@@ -299,7 +290,7 @@ export function App() {
               result={expect}
             />
 
-            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
+            <div className="mt-4 space-y-4">
               <section>
                 {expectLoading ? (
                   <div className="grid place-items-center py-20 text-sm text-muted-foreground">
@@ -319,18 +310,7 @@ export function App() {
                 )}
               </section>
 
-              <aside className="space-y-4">
-                <Card className="overflow-hidden">
-                  <div className="h-64">
-                    <MapView
-                      center={{ lat: place.lat, lon: place.lon }}
-                      radiusKm={radiusKm}
-                      reports={recentNearby}
-                    />
-                  </div>
-                </Card>
-                <RecentCard reports={recentNearby} radiusKm={radiusKm} />
-              </aside>
+              <RecentCard reports={recentNearby} radiusKm={radiusKm} />
             </div>
 
             <footer className="mt-6 border-t pt-3 text-[11px] text-muted-foreground">
@@ -344,7 +324,7 @@ export function App() {
               <div className="mt-1">
                 Waarnemingen {relativeTime(meta?.datasets?.[0]?.last_success_at)} ·
                 weer {relativeTime(meta?.weather?.as_of)} · model{" "}
-                {meta?.model_version} {me?.email ? `· ${me.email}` : ""}
+                {meta?.model_version}
               </div>
             </footer>
           </div>
@@ -530,6 +510,14 @@ function LikelyList({ data }: { data: ExpectResult }) {
                   <span className="font-medium">
                     {s.name_nl ?? s.scientific_name}
                   </span>
+                  {s.sensitive && (
+                    <Badge
+                      className="bg-destructive/15 text-destructive"
+                      title="Beschermd of op de Rode Lijst. Kijken kan, meenemen niet."
+                    >
+                      zeldzaam
+                    </Badge>
+                  )}
                   <Badge className={phaseTone(s.seasonal)}>{s.phase}</Badge>
                   <Badge>{Math.round(s.seasonal * 100)}% van piek</Badge>
                   {s.period_records > 0 && (
@@ -557,6 +545,10 @@ function LikelyList({ data }: { data: ExpectResult }) {
             </li>
           ))}
         </ol>
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          Soorten met een zeldzaam-badge zijn beschermd of staan op de Rode
+          Lijst. Fotograferen kan, meenemen niet.
+        </p>
       </CardContent>
     </Card>
   )
@@ -597,8 +589,16 @@ function RecentCard({
                   {r.days_ago}d
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate font-medium">
+                  <span className="flex items-center gap-1.5 truncate font-medium">
                     {r.name_nl ?? r.scientific_name}
+                    {r.sensitive && (
+                      <Badge
+                        className="bg-destructive/15 text-destructive"
+                        title="Beschermd of op de Rode Lijst"
+                      >
+                        zeldzaam
+                      </Badge>
+                    )}
                   </span>
                   <span className="block text-[11px] text-muted-foreground">
                     {r.observed_on} · {r.precise ? "1 km nauwkeurig" : "5 km vak"}

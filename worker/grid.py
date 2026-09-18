@@ -89,63 +89,29 @@ UPDATE occurrences SET
 WHERE source_dataset IS NULL;
 """
 
-# Rebuild the 1 km layer from precise records only. Exact points never leave
-# the database: the cell centre is the finest thing displayed.
-SQL_REBUILD_FINE_CELLS = """
-DELETE FROM fine_cells;
-INSERT INTO fine_cells (cell_id, guild, n, years, first_seen, last_seen,
-                        recent_n, center_lat, center_lon, updated_at)
-WITH pts AS (
-    SELECT ST_Transform(o.geom, 28992) AS g, s.guild, o.observed_on
-    FROM occurrences o
-    JOIN species s ON s.id = o.species_id
-    WHERE o.precise AND s.enabled AND NOT s.sensitive AND o.geom IS NOT NULL
-),
-agg AS (
-    SELECT floor(ST_X(g) / 1000)::bigint AS ix,
-           floor(ST_Y(g) / 1000)::bigint AS iy,
-           guild,
-           count(*)::int AS n,
-           count(DISTINCT date_part('year', observed_on))::int AS years,
-           min(observed_on) AS first_seen,
-           max(observed_on) AS last_seen,
-           count(*) FILTER (WHERE observed_on >= current_date - 30)::int AS recent_n
-    FROM pts
-    GROUP BY 1, 2, 3
-)
-SELECT 'r' || ix || '_' || iy,
-       guild, n, years, first_seen, last_seen, recent_n,
-       ST_Y(ST_Transform(ST_Centroid(ST_MakeEnvelope(ix * 1000, iy * 1000,
-              ix * 1000 + 1000, iy * 1000 + 1000, 28992)), 4326)),
-       ST_X(ST_Transform(ST_Centroid(ST_MakeEnvelope(ix * 1000, iy * 1000,
-              ix * 1000 + 1000, iy * 1000 + 1000, 28992)), 4326)),
-       now()
-FROM agg;
-"""
-
 # Rebuild recent reports from every usable record in the last ~13 months.
 # Coarse records are snapped to their 5 km cell centre, precise ones to 1 km.
 SQL_REBUILD_RECENT_REPORTS = """
 DELETE FROM recent_reports;
 INSERT INTO recent_reports (id, guild, species_id, name_nl, scientific_name,
-                            observed_on, resolution_m, precise, lat, lon)
-SELECT DISTINCT ON (x.species_id, x.observed_on, x.res, x.lat, x.lon)
+                            observed_on, resolution_m, precise, sensitive, lat, lon)
+SELECT DISTINCT ON (x.species_id, x.observed_on, x.res, x.lat, x.lon, x.sensitive)
        md5(x.species_id || '|' || x.observed_on || '|' || x.res || '|' ||
            x.lat || '|' || x.lon),
        x.guild, x.species_id, x.name_nl, x.scientific_name, x.observed_on,
-       x.res, x.precise, x.lat, x.lon
+       x.res, x.precise, x.sensitive, x.lat, x.lon
 FROM (
     SELECT s.id AS species_id, s.name_nl, s.scientific_name, s.guild,
-           o.observed_on, false AS precise, 5000 AS res,
+           o.observed_on, false AS precise, 5000 AS res, s.sensitive,
            gc.center_lat AS lat, gc.center_lon AS lon
     FROM occurrences o
     JOIN species s ON s.id = o.species_id
     JOIN grid_cells gc ON gc.cell_id = o.cell_id
-    WHERE NOT o.precise AND s.enabled AND NOT s.sensitive
+    WHERE NOT o.precise AND s.enabled
       AND o.observed_on >= current_date - 400
     UNION ALL
     SELECT s.id, s.name_nl, s.scientific_name, s.guild, o.observed_on,
-           true, 1000,
+           true, 1000, s.sensitive,
            ST_Y(ST_Transform(ST_Centroid(e.env), 4326)),
            ST_X(ST_Transform(ST_Centroid(e.env), 4326))
     FROM occurrences o
@@ -158,7 +124,7 @@ FROM (
                    floor(ST_Y(ST_Transform(o.geom, 28992)) / 1000) * 1000 + 1000,
                    28992) AS env
     ) e
-    WHERE o.precise AND s.enabled AND NOT s.sensitive
+    WHERE o.precise AND s.enabled
       AND o.observed_on >= current_date - 400
 ) x
 WHERE x.lat IS NOT NULL AND x.lon IS NOT NULL;

@@ -1,5 +1,5 @@
-# nginx config for the mushroom-finder webui: SPA fallback, /me identity
-# endpoint (oauth2-proxy SSI), and /api proxy to the in-pod API sidecar.
+# nginx voor de webui: SPA-fallback, beveiligingsheaders en /api naar de
+# API in dezelfde pod.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,6 +13,16 @@ data:
         root /usr/share/nginx/html;
         index index.html;
 
+        # De pagina is openbaar en alleen-lezen. Deze headers kosten niets.
+        # De CSP staat alleen de eigen bestanden toe plus de soortfoto's van
+        # Wikimedia; verder wordt er niets van buiten geladen.
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: https://thumb.wikimedia.org https://upload.wikimedia.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+
         # API: server-side validated refresh jobs, hotspots, weather.
         location /api/ {
             proxy_pass http://127.0.0.1:3001;
@@ -24,13 +34,5 @@ data:
 
         location / {
             try_files $uri $uri/ /index.html;
-        }
-
-        # Identity for the SPA: oauth2-proxy (set-xauthrequest) injects
-        # X-Auth-Request-Email/Groups, SSI echoes them as JSON.
-        location = /me {
-            ssi on;
-            ssi_types *;
-            default_type application/json;
         }
     }

@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "leaflet/dist/leaflet.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -91,19 +90,6 @@
     scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent)
       transparent;
   }
-}
-
-.leaflet-container {
-  background: var(--muted);
-  font: inherit;
-}
-.leaflet-container a {
-  color: var(--primary);
-}
-.leaflet-control-attribution {
-  background: color-mix(in oklch, var(--card) 85%, transparent) !important;
-  color: var(--muted-foreground);
-  font-size: 10px;
 }
 
 /* Warme gloed achter de startpagina. */
