@@ -30,16 +30,16 @@ def _progress(conn, run_id):
 
 
 def run_weather(conn, run_id, progress) -> dict:
-    import pipeline_score
+    # Alleen het weer opslaan. De seizoensrangschikking hangt niet van het weer
+    # af, dus de dure herberekening hoort hier niet elke keer te draaien.
     import sources_weather
 
-    progress(0.1, "weather", "fetching Open-Meteo snapshot")
+    progress(0.2, "weather", "weer ophalen bij Open-Meteo")
     snap = sources_weather.national_snapshot()
     if not snap:
         raise RuntimeError("weather provider returned no data")
     sources_weather.store_snapshot(conn, "nl", snap)
-    progress(0.7, "scoring", "recomputing static scores")
-    pipeline_score.recompute(conn)
+    progress(0.9, "weather", "opgeslagen")
     return {
         "as_of": snap["as_of"].isoformat(),
         "precip_14d": snap["precip_14d"],

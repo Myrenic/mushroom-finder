@@ -38,16 +38,37 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # Kubernetes API (refresh Job management) + data providers + pip.
-    # The apiserver is reached via its ClusterIP/host endpoint, which no pod
-    # or namespace selector matches, so this is allowed by port.
+    # Alleen nog uitgaand verkeer naar de databronnen (PDOK, Nominatim,
+    # Wikimedia) en naar PyPI voor de init-container.
     - ports:
         - protocol: TCP
           port: 443
         - protocol: TCP
-          port: 6443
-        - protocol: TCP
           port: 80
+---
+# De database is alleen bereikbaar voor deze app en haar worker-Jobs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mushroom-finder-postgres
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: mushroom-finder
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mushroom-finder
+              app.kubernetes.io/component: worker
+      ports:
+        - protocol: TCP
+          port: 5432
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

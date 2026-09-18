@@ -1,36 +1,5 @@
-# The API may only create/observe/delete refresh Jobs in its own namespace.
-# It can not touch Secrets, Pods, Deployments or other namespaces.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: mushroom-finder-api
-  namespace: services
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: mushroom-finder-api
-  namespace: services
-rules:
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: mushroom-finder-api
-  namespace: services
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: mushroom-finder-api
-subjects:
-  - kind: ServiceAccount
-    name: mushroom-finder-api
-    namespace: services
----
-# Worker Jobs get no Kubernetes permissions and no mounted token at all.
+# De API is alleen-lezen en heeft geen Kubernetes-toegang meer. Wat overblijft
+# is het account voor de worker-Jobs: geen rechten, geen token.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

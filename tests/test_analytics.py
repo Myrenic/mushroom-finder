@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 import datetime as dt  # noqa: E402
 
 from analytics import (  # noqa: E402
+    RateLimiter,
+    TTLCache,
     binomial,
     clean_query,
     query_variants,
@@ -94,6 +96,26 @@ def test_empty_profile_is_safe():
     empty = [0.0] * 53
     assert seasonal_score(empty, 40) == 0.0
     assert window(empty, 1) == 0.0
+
+
+def test_rate_limiter_blocks_and_recovers():
+    rl = RateLimiter(limit=3, window_s=60)
+    assert all(rl.allow("a", now=t) for t in (0, 1, 2))
+    assert rl.allow("a", now=3) is False          # 4e keer binnen het venster
+    assert rl.allow("b", now=3) is True           # andere bezoeker, eigen teller
+    assert rl.allow("a", now=100) is True         # venster verstreken
+
+
+def test_ttl_cache_expires():
+    c = TTLCache(ttl_s=10, max_items=2)
+    c.set("k", "v", now=0)
+    assert c.get("k", now=5) == "v"
+    assert c.get("k", now=11) is None
+    c.set("a", 1, now=0)
+    c.set("b", 2, now=0)
+    c.set("c", 3, now=0)                          # oudste valt eruit
+    assert c.get("a", now=0) is None
+    assert c.get("c", now=0) == 3
 
 
 def main() -> int:

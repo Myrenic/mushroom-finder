@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import {
-  CloudRain,
-  Database,
-  Loader2,
-  MapPin,
-  Moon,
-  Search,
-  Sun,
-} from "lucide-react"
+import { Loader2, MapPin, Moon, Search, Sun } from "lucide-react"
 
 import { Badge } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,14 +7,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import { MushroomIcon } from "@/components/MushroomIcon"
 import { MapView } from "@/components/MapView"
 import {
-  cancelRun,
   distanceKm,
   fetchExpect,
   fetchMe,
   fetchMeta,
   fetchRecent,
   searchPlaces,
-  startRefresh,
   type ExpectResult,
   type Me,
   type Meta,
@@ -104,7 +94,6 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
 
   // search
   const [query, setQuery] = useState("")
@@ -124,7 +113,7 @@ export function App() {
 
   const boxRef = useRef<HTMLDivElement>(null)
 
-  const loadRuns = useCallback(async () => {
+  const loadMeta = useCallback(async () => {
     try {
       setMeta(await fetchMeta())
     } catch (err) {
@@ -139,22 +128,14 @@ export function App() {
       } catch {
         /* read-only browsing is fine without identity */
       }
-      await loadRuns()
+      await loadMeta()
       try {
         setRecent((await fetchRecent(90)).reports)
       } catch {
         /* recent is supplementary */
       }
     })()
-  }, [loadRuns])
-
-  // Poll while a refresh runs so progress and data stay live.
-  useEffect(() => {
-    const active = meta?.runs.some((r) => r.status === "running" || r.status === "queued")
-    if (!active) return
-    const t = setInterval(loadRuns, 5000)
-    return () => clearInterval(t)
-  }, [meta, loadRuns])
+  }, [loadMeta])
 
   // Debounced place search.
   useEffect(() => {
@@ -232,20 +213,6 @@ export function App() {
       .sort((a, b) => a.days_ago - b.days_ago)
   }, [place, radiusKm, recent])
 
-  const trigger = async (kind: "weather" | "historical") => {
-    setBusy(kind)
-    try {
-      await startRefresh(kind)
-      await loadRuns()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const activeRun = meta?.runs.find((r) => r.status === "running" || r.status === "queued")
-
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card/80 px-3 backdrop-blur">
@@ -301,26 +268,6 @@ export function App() {
 
         <div className="ml-auto flex items-center gap-1.5">
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => trigger("weather")}
-            disabled={busy === "weather" || !!activeRun}
-            title="Weer bijwerken"
-          >
-            {busy === "weather" ? <Loader2 className="animate-spin" /> : <CloudRain />}
-            <span className="hidden lg:inline">Weer</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => trigger("historical")}
-            disabled={busy === "historical" || !!activeRun}
-            title="Waarnemingen opnieuw inladen"
-          >
-            {busy === "historical" ? <Loader2 className="animate-spin" /> : <Database />}
-            <span className="hidden lg:inline">Historie</span>
-          </Button>
-          <Button
             variant="ghost"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -330,28 +277,6 @@ export function App() {
           </Button>
         </div>
       </header>
-
-      {activeRun && (
-        <div className="flex items-center gap-2 border-b bg-accent/30 px-3 py-1.5 text-xs">
-          <Loader2 className="size-3.5 animate-spin" />
-          <span className="font-medium">{activeRun.kind === "weather" ? "Weer" : "Historie"}</span>
-          <span className="text-muted-foreground">
-            {activeRun.phase} · {Math.round((activeRun.progress ?? 0) * 100)}%
-            {activeRun.message ? ` · ${activeRun.message}` : ""}
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto"
-            onClick={async () => {
-              await cancelRun(activeRun.id)
-              await loadRuns()
-            }}
-          >
-            Stop
-          </Button>
-        </div>
-      )}
 
       {error && (
         <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">

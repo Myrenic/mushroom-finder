@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/name: mushroom-finder
     app.kubernetes.io/component: worker
 spec:
-  schedule: "0 */3 * * *"
+  schedule: "0 * * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 1
@@ -115,7 +115,7 @@ metadata:
     app.kubernetes.io/name: mushroom-finder
     app.kubernetes.io/component: worker
 spec:
-  schedule: "0 4 1 * *"
+  schedule: "0 4 */2 * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 1

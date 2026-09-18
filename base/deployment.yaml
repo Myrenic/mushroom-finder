@@ -17,7 +17,8 @@ spec:
         app: mushroom-finder
         app.kubernetes.io/name: mushroom-finder
     spec:
-      serviceAccountName: mushroom-finder-api
+      # Alleen-lezen API: geen Kubernetes-toegang nodig.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         fsGroup: 1000
@@ -95,14 +96,6 @@ spec:
               value: "/deps:/worker"
             - name: API_PORT
               value: "3001"
-            - name: KUBE_NAMESPACE
-              value: "services"
-            - name: WORKER_IMAGE
-              value: "docker.io/library/python:3.12-slim"
-            - name: WORKER_IMAGE_RASTER
-              value: "docker.io/library/python:3.12"
-            - name: ADMIN_GROUPS
-              value: "admin,admins"
             - name: TZ
               value: "${TZ}"
             - name: PGHOST

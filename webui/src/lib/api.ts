@@ -90,18 +90,6 @@ export interface RecentReport {
   lon: number
 }
 
-export interface RefreshRun {
-  id: string
-  kind: string
-  status: string
-  progress: number
-  phase: string | null
-  message: string | null
-  started_at: string | null
-  finished_at: string | null
-  error: string | null
-}
-
 export interface Meta {
   model_version: string
   datasets: Array<{
@@ -112,7 +100,6 @@ export interface Meta {
     licence: string
     last_success_at: string | null
   }>
-  runs: RefreshRun[]
   attributions: Array<{ id: string; label: string; url: string; licence: string }>
   weather: Weather
 }
@@ -144,16 +131,6 @@ export const fetchExpect = (
 
 export const fetchRecent = (days = 90) =>
   api<{ reports: RecentReport[] }>(`/recent?limit=1500&days=${days}`)
-
-export const startRefresh = (kind: "weather" | "historical") =>
-  api<{ run_id: string; kind: string }>("/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind }),
-  })
-
-export const cancelRun = (runId: string) =>
-  api<{ ok: boolean }>(`/refresh/${encodeURIComponent(runId)}`, { method: "DELETE" })
 
 /** Great-circle distance in km, for filtering nearby reports client-side. */
 export function distanceKm(
