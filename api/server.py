@@ -37,7 +37,12 @@ from psycopg.rows import dict_row  # noqa: E402
 sys.path.insert(0, "/worker")
 import db  # noqa: E402
 import scoring  # noqa: E402
-from analytics import query_variants, seasonal_score, weekly_profile  # noqa: E402
+from analytics import (  # noqa: E402
+    query_variants,
+    seasonal_score,
+    weekly_profile,
+    window,
+)
 from config import ATTRIBUTIONS, GUILDS, MODEL_VERSION  # noqa: E402
 
 API_PORT = int(os.environ.get("API_PORT", "3001"))
@@ -525,7 +530,7 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
             "last_seen": last_seen.isoformat() if last_seen else None,
             "days_ago": days_ago,
             "seasonal": round(seasonal, 3),
-            "peak_week": max(range(1, 54), key=lambda w: _window(arr, w)),
+            "peak_week": max(range(1, 54), key=lambda w: window(arr, w)),
             "expected": round(expected, 3),
             "confidence": round(confidence, 2),
             "phase": phase,
