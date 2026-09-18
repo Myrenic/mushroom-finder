@@ -82,6 +82,21 @@ def latest_condition(conn) -> dict:
     }
 
 
+# ── Plaatsen zoeken ──────────────────────────────────────────────────────
+# Twee bronnen, want geen van beide is compleet: PDOK (Nederlandse overheid)
+# is het best voor plaatsen en adressen, Nominatim/OSM voor natuurgebieden en
+# water. Nederlandse verkleinwoorden ("hemelriekje") staan nergens in de index,
+# dus de zoekterm wordt stapsgewijs afgezwakt.
+_GEO_CACHE: dict[str, list] = {}
+_GEO_LOCK = threading.Lock()
+_GEO_LAST = [0.0]
+_GEO_CACHE_MAX = 300
+
+PDOK_FREE = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
+NOMINATIM = "https://nominatim.openstreetmap.org/search"
+POINT_RE = re.compile(r"POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)")
+
+
 def _http_json(url: str, params: dict, timeout: int = 20):
     import urllib.parse
 
