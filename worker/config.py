@@ -124,8 +124,13 @@ ATTRIBUTIONS = [
     },
 ]
 
-# Rate-limit / bounds for source etiquette
+# ── GBIF sampling budget ─────────────────────────────────────────────────
+# Records are fetched one *calendar year* at a time. GBIF's result ordering
+# clumps by year, so a straight page-through (or coarse year ranges) samples
+# only a few years and biases the yearly-recurrence signal. A per-year budget
+# spreads the same request volume across the whole record period.
 GBIF_PAGE_SIZE = 300
-GBIF_MAX_RECORDS_PER_TAXON = 20000
+GBIF_YEAR_FROM = 2005
+GBIF_MAX_RECORDS_PER_TAXON = 6000
 HTTP_TIMEOUT_S = 60
 USER_AGENT = "mushroom-finder/0.1 (private household research; contact: owner)"

@@ -80,23 +80,26 @@ def match_species(name: str) -> dict | None:
 def fetch_occurrences(
     taxon_key: int,
     year_from: int = 2005,
+    year_to: int = 2100,
+    max_records: int | None = None,
     progress: Progress | None = None,
 ) -> Iterable[dict]:
-    """Yield permitted Dutch occurrence records for one taxon.
+    """Yield permitted Dutch occurrence records for one taxon and year range.
 
     Uses offset paging; GBIF caps deep paging, but per-taxon volumes for our
     curated taxa are well inside that, and we hard-cap anyway.
     """
     progress = progress or _noop
+    cap = GBIF_MAX_RECORDS_PER_TAXON if max_records is None else max_records
     offset = 0
     fetched = 0
-    while fetched < GBIF_MAX_RECORDS_PER_TAXON:
+    while fetched < cap:
         params = {
             "taxonKey": taxon_key,
             "country": "NL",
             "hasCoordinate": "true",
             "hasGeospatialIssue": "false",
-            "year": "{},{}".format(year_from, 2100),
+            "year": "{},{}".format(year_from, year_to),
             "limit": GBIF_PAGE_SIZE,
             "offset": offset,
         }
@@ -148,11 +151,11 @@ def fetch_occurrences(
                 },
             }
             fetched += 1
-            if fetched >= GBIF_MAX_RECORDS_PER_TAXON:
+            if fetched >= cap:
                 return
         offset += GBIF_PAGE_SIZE
         progress(
-            min(1.0, fetched / max(1, GBIF_MAX_RECORDS_PER_TAXON)),
+            min(1.0, fetched / max(1, cap)),
             "fetch",
             "{} records".format(fetched),
         )

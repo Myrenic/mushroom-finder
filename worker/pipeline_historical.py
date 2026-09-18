@@ -97,6 +97,14 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) 
     conn.commit()
 
     # ── Fetch occurrences ────────────────────────────────────────────────
+    # Sample each taxon one year at a time so recurrence sees the whole record
+    # period rather than whichever years sit first in the result set.
+    import datetime as dt
+
+    import config as cfg
+
+    buckets = [(y, y) for y in range(cfg.GBIF_YEAR_FROM, dt.date.today().year + 1)]
+    per_bucket = max(1, cfg.GBIF_MAX_RECORDS_PER_TAXON // len(buckets))
     total_inserted = 0
     for i, (taxon, species_id, key) in enumerate(resolved):
         def cb(p: float, phase: str, msg: str, _i=i, _name=taxon["sci"]) -> None:
@@ -105,12 +113,16 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) 
                      "{} {}".format(_name, msg))
 
         rows = []
-        for rec in sources_gbif.fetch_occurrences(key, progress=cb):
-            rows.append({
-                **rec,
-                "dataset_id": GBIF_DATASET["id"],
-                "species_id": species_id,
-            })
+        for (year_from, year_to) in buckets:
+            for rec in sources_gbif.fetch_occurrences(
+                key, year_from=year_from, year_to=year_to,
+                max_records=per_bucket, progress=cb,
+            ):
+                rows.append({
+                    **rec,
+                    "dataset_id": GBIF_DATASET["id"],
+                    "species_id": species_id,
+                })
         total_inserted += _insert_occurrences(conn, rows)
 
     progress(0.72, "cells", "building 5x5 km cells")
