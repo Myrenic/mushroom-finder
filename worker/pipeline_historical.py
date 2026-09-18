@@ -23,6 +23,7 @@ import grid
 import pipeline_score
 import sources_environment
 import sources_gbif
+import sources_images
 
 Progress = Callable[[float, str, str], None]
 
@@ -108,6 +109,14 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) 
         })
         resolved.append((taxon, species_id, match["taxon_key"]))
     conn.commit()
+
+    # ── Species photos (one-off; skipped once present) ───────────────────
+    try:
+        got = sources_images.enrich_species_images(conn, progress)
+        if got:
+            progress(0.14, "images", "{} species photos added".format(got))
+    except Exception as exc:  # photos must never fail the data import
+        progress(0.14, "images", "photo enrichment skipped: {}".format(exc)[:80])
 
     # ── Fetch occurrences ────────────────────────────────────────────────
     # Sample each taxon one year at a time so recurrence sees the whole record

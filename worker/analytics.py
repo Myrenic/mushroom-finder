@@ -6,6 +6,7 @@ a running stack.
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 # Dutch articles and diminutive suffixes. Small places such as
@@ -43,6 +44,11 @@ def query_variants(q: str) -> list[str]:
 
 
 
+
+
+def week_of(d: dt.date) -> int:
+    """ISO week number, so a chosen date drives the seasonal projection."""
+    return d.isocalendar()[1]
 
 
 def weekly_profile(weeks, counts) -> list[float]:

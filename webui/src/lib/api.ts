@@ -55,14 +55,23 @@ export interface ExpectSpecies {
   confidence: number
   phase: string
   reasons: string[]
+  image_url: string | null
+  image_credit: string | null
+  image_credit_url: string | null
+  /** Records around the selected date in the selected year (0 for future). */
+  period_records: number
+  period_last_seen: string | null
 }
 
 export interface ExpectResult {
   lat: number
   lon: number
   radius_km: number
+  date: string
   week: number
   month: number
+  is_future: boolean
+  known_total: number
   weather: Weather
   species: ExpectSpecies[]
 }
@@ -123,8 +132,15 @@ export const fetchMeta = () => api<Meta>("/meta")
 export const searchPlaces = (q: string) =>
   api<{ results: Place[] }>(`/search?q=${encodeURIComponent(q)}`)
 
-export const fetchExpect = (lat: number, lon: number, radiusKm: number) =>
-  api<ExpectResult>(`/expect?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`)
+export const fetchExpect = (
+  lat: number,
+  lon: number,
+  radiusKm: number,
+  date?: string
+) =>
+  api<ExpectResult>(
+    `/expect?lat=${lat}&lon=${lon}&radius_km=${radiusKm}${date ? `&date=${date}` : ""}`
+  )
 
 export const fetchRecent = (days = 90) =>
   api<{ reports: RecentReport[] }>(`/recent?limit=1500&days=${days}`)

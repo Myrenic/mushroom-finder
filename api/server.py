@@ -40,6 +40,7 @@ import scoring  # noqa: E402
 from analytics import (  # noqa: E402
     query_variants,
     seasonal_score,
+    week_of,
     weekly_profile,
     window,
 )
@@ -446,13 +447,14 @@ WITH me AS (
 ),
 local AS (
     SELECT s.id, s.name_nl, s.scientific_name, s.guild, s.photo_value,
+           s.image_url, s.image_credit, s.image_credit_url,
            count(*) AS n, max(o.observed_on) AS last_seen
     FROM occurrences o
     JOIN species s ON s.id = o.species_id
     CROSS JOIN me
     WHERE s.enabled AND NOT s.sensitive AND o.geom IS NOT NULL
       AND ST_DWithin(o.geom::geography, me.g, %(radius_m)s)
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 ),
 weeks AS (
     SELECT s.id AS sid, date_part('week', o.observed_on)::int AS wk, count(*) AS c
@@ -466,6 +468,7 @@ prof AS (
     FROM weeks GROUP BY sid
 )
 SELECT l.id, l.name_nl, l.scientific_name, l.guild, l.photo_value,
+       l.image_url, l.image_credit, l.image_credit_url,
        l.n, l.last_seen, p.wks, p.cnts
 FROM local l
 LEFT JOIN prof p ON p.sid = l.id
@@ -474,8 +477,33 @@ LIMIT 60
 """
 
 
+def _period_actuals(conn, lat: float, lon: float, radius_m: int,
+                    target: dt.date) -> dict:
+    """What was actually reported near a point around that date, that year."""
+    lo = target - dt.timedelta(days=30)
+    hi = target + dt.timedelta(days=30)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH me AS (
+                SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography AS g
+            )
+            SELECT o.species_id, count(*) AS n, max(o.observed_on) AS last_seen
+            FROM occurrences o
+            CROSS JOIN me
+            WHERE o.geom IS NOT NULL
+              AND o.observed_on BETWEEN %(lo)s AND %(hi)s
+              AND ST_DWithin(o.geom::geography, me.g, %(radius_m)s)
+            GROUP BY 1
+            """,
+            {"lon": lon, "lat": lat, "radius_m": radius_m, "lo": lo, "hi": hi},
+        )
+        return {r["species_id"]: dict(r) for r in cur.fetchall()}
+
+
 def expect_here(conn, lat: float, lon: float, radius_m: int,
-                weather: dict | None = None) -> dict:
+                weather: dict | None = None,
+                target_date: dt.date | None = None) -> dict:
     """Rank the species known in this area by how likely they are right now.
 
     Ranking uses local records and the species' own national phenology (how
@@ -483,12 +511,17 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
     a national test found only a ~10% effect that does not survive per-guild
     scrutiny, so it is reported as context for the reader to judge.
     """
+    today = dt.date.today()
+    target = target_date or today
     with conn.cursor() as cur:
         cur.execute(SQL_EXPECT, {"lat": lat, "lon": lon, "radius_m": radius_m})
         rows = cur.fetchall()
 
-    week = dt.date.today().isocalendar()[1]
-    month = dt.date.today().month
+    # For a past date we can also show what was really reported then.
+    actuals = {} if target > today else _period_actuals(conn, lat, lon, radius_m, target)
+
+    week = week_of(target)
+    month = target.month
     out = []
     for row in rows:
         arr = weekly_profile(row["wks"], row["cnts"])
@@ -519,6 +552,7 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
                     "today" if days_ago <= 1 else "{} days ago".format(days_ago)
                 )
             )
+        act = actuals.get(row["id"]) or {}
         out.append({
             "species_id": row["id"],
             "name_nl": row["name_nl"],
@@ -526,6 +560,13 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
             "guild": row["guild"],
             "guild_label": GUILDS.get(row["guild"], row["guild"]),
             "photo_value": row["photo_value"],
+            "image_url": row["image_url"],
+            "image_credit": row["image_credit"],
+            "image_credit_url": row["image_credit_url"],
+            # Records around the selected date in the selected year (0 in future)
+            "period_records": act.get("n", 0),
+            "period_last_seen": (act["last_seen"].isoformat()
+                                 if act.get("last_seen") else None),
             "local_records": row["n"],
             "last_seen": last_seen.isoformat() if last_seen else None,
             "days_ago": days_ago,
@@ -541,8 +582,11 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
         "lat": lat,
         "lon": lon,
         "radius_km": radius_m // 1000,
+        "date": target.isoformat(),
         "week": week,
         "month": month,
+        "is_future": target > today,
+        "known_total": len(rows),
         # Context only; not an input to the ranking above.
         "weather": weather or {},
         "species": out,
@@ -751,8 +795,19 @@ class Handler(BaseHTTPRequestHandler):
                     if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 7.5):
                         return self._send(400, {"error": "point is outside the Netherlands"})
                     radius_km = min(25, max(1, int((query.get("radius_km") or ["5"])[0])))
+                    raw_date = (query.get("date") or [""])[0]
+                    target = None
+                    if raw_date:
+                        try:
+                            target = dt.date.fromisoformat(raw_date)
+                        except ValueError:
+                            return self._send(400, {"error": "date must be YYYY-MM-DD"})
+                        if not (dt.date(2005, 1, 1) <=
+                                target <= dt.date.today() + dt.timedelta(days=400)):
+                            return self._send(400, {"error": "date is out of range"})
                     return self._send(200, expect_here(
-                        conn, lat, lon, radius_km * 1000, latest_condition(conn)))
+                        conn, lat, lon, radius_km * 1000, latest_condition(conn),
+                        target_date=target))
                 if path == "/api/search":
                     q = (query.get("q") or [""])[0]
                     return self._send(200, {"results": search_places(q)})

@@ -14,7 +14,26 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 
-from analytics import clean_query, query_variants, seasonal_score, weekly_profile, window  # noqa: E402
+import datetime as dt  # noqa: E402
+
+from analytics import (  # noqa: E402
+    clean_query,
+    query_variants,
+    seasonal_score,
+    week_of,
+    weekly_profile,
+    window,
+)
+
+
+def test_week_of_drives_the_projection():
+    """The chosen date, not today, must decide the seasonal curve."""
+    assert week_of(dt.date(2026, 9, 18)) == 38
+    assert week_of(dt.date(2026, 10, 2)) == 40
+    # The same calendar week a year earlier behaves identically.
+    assert week_of(dt.date(2025, 9, 15)) == week_of(dt.date(2026, 9, 18)) == 38
+    # Out-of-season dates still resolve, so the UI can say "nothing now".
+    assert week_of(dt.date(2026, 1, 15)) == 3
 
 
 def test_diminutive_and_article_relaxation():

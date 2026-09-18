@@ -44,6 +44,21 @@ function useTheme() {
   return { theme, setTheme }
 }
 
+function todayIso(): string {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10)
+}
+
+function addDays(iso: string, days: number): string {
+  const d = new Date(iso + "T12:00:00")
+  d.setDate(d.getDate() + days)
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10)
+}
+
 function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "never"
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
@@ -76,6 +91,9 @@ export function App() {
   // selected place + results
   const [place, setPlace] = useState<Place | null>(null)
   const [radiusKm, setRadiusKm] = useState(5)
+  // Which date's season we are projecting. Past dates also show what was
+  // actually reported around then.
+  const [viewDate, setViewDate] = useState<string>(() => todayIso())
   const [expect, setExpect] = useState<ExpectResult | null>(null)
   const [expectLoading, setExpectLoading] = useState(false)
   const [recent, setRecent] = useState<RecentReport[]>([])
@@ -151,31 +169,34 @@ export function App() {
     return () => document.removeEventListener("mousedown", onDown)
   }, [])
 
-  const loadExpect = useCallback(async (p: Place, radius: number) => {
-    setExpectLoading(true)
-    setError(null)
-    try {
-      setExpect(await fetchExpect(p.lat, p.lon, radius))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setExpect(null)
-    } finally {
-      setExpectLoading(false)
-    }
-  }, [])
+  const loadExpect = useCallback(
+    async (p: Place, radius: number, date: string) => {
+      setExpectLoading(true)
+      setError(null)
+      try {
+        setExpect(await fetchExpect(p.lat, p.lon, radius, date))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+        setExpect(null)
+      } finally {
+        setExpectLoading(false)
+      }
+    },
+    []
+  )
 
   const choose = (p: Place) => {
     setPlace(p)
     setOpen(false)
     setQuery("")
     setSuggestions([])
-    loadExpect(p, radiusKm)
+    loadExpect(p, radiusKm, viewDate)
   }
 
   useEffect(() => {
-    if (place) loadExpect(place, radiusKm)
+    if (place) loadExpect(place, radiusKm, viewDate)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [radiusKm])
+  }, [radiusKm, viewDate])
 
   const recentNearby = useMemo(() => {
     if (!place) return []
@@ -323,9 +344,10 @@ export function App() {
               place={place}
               radiusKm={radiusKm}
               onRadius={setRadiusKm}
+              viewDate={viewDate}
+              onDate={setViewDate}
               weather={expect?.weather}
-              week={expect?.week}
-              known={expect?.species.length ?? 0}
+              result={expect}
             />
 
             <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
@@ -338,9 +360,9 @@ export function App() {
                 ) : !expect || expect.species.length === 0 ? (
                   <Card>
                     <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                      No curated species recorded within {radiusKm} km of this
-                      place yet. Records are sparse in some areas; try a larger
-                      radius.
+                      {expect && expect.known_total > 0
+                        ? `${expect.known_total} species are known within ${radiusKm} km, but none is typically fruiting around ${viewDate} (week ${expect.week}). Try another date.`
+                        : `No curated species recorded within ${radiusKm} km of this place yet. Records are sparse in some areas; try a larger radius.`}
                     </CardContent>
                   </Card>
                 ) : (
@@ -421,16 +443,18 @@ function PlaceHeader({
   place,
   radiusKm,
   onRadius,
+  viewDate,
+  onDate,
   weather,
-  week,
-  known,
+  result,
 }: {
   place: Place
   radiusKm: number
   onRadius: (n: number) => void
+  viewDate: string
+  onDate: (d: string) => void
   weather?: Weather
-  week?: number
-  known: number
+  result: ExpectResult | null
 }) {
   return (
     <Card>
@@ -444,25 +468,60 @@ function PlaceHeader({
               {place.lat.toFixed(4)}, {place.lon.toFixed(4)}
             </p>
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            radius
-            <select
-              value={radiusKm}
-              onChange={(e) => onRadius(Number(e.target.value))}
-              className="h-7 rounded border border-border bg-background px-1.5"
-            >
-              <option value={2}>2 km</option>
-              <option value={5}>5 km</option>
-              <option value={10}>10 km</option>
-              <option value={20}>20 km</option>
-            </select>
-          </label>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-1.5">
+              radius
+              <select
+                value={radiusKm}
+                onChange={(e) => onRadius(Number(e.target.value))}
+                className="h-7 rounded border border-border bg-background px-1.5"
+              >
+                <option value={2}>2 km</option>
+                <option value={5}>5 km</option>
+                <option value={10}>10 km</option>
+                <option value={20}>20 km</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5">
+              date
+              <input
+                type="date"
+                value={viewDate}
+                min="2005-01-01"
+                onChange={(e) => onDate(e.target.value)}
+                className="h-7 rounded border border-border bg-background px-1.5"
+              />
+            </label>
+            <div className="flex items-center gap-0.5">
+              <Button
+                size="sm"
+                variant={viewDate === todayIso() ? "secondary" : "ghost"}
+                onClick={() => onDate(todayIso())}
+              >
+                Now
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDate(addDays(todayIso(), 7))}>
+                +1 wk
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDate(addDays(todayIso(), 14))}>
+                +2 wk
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDate(addDays(todayIso(), 28))}>
+                +4 wk
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          {week && <Badge>week {week}</Badge>}
-          <Badge>{known} species known here</Badge>
-          {weather && !weather.as_of && <Badge>no weather data</Badge>}
+          {result && <Badge>week {result.week}</Badge>}
+          {result && (
+            <Badge className={result.is_future ? "bg-accent/50 text-accent-foreground" : ""}>
+              {result.is_future ? "projected for that date" : "date is today or past"}
+            </Badge>
+          )}
+          <Badge>{result?.known_total ?? 0} species known here</Badge>
           {weather?.as_of && (
             <>
               <Badge>rain 14d {weather.precip_14d ?? 0} mm</Badge>
@@ -475,7 +534,9 @@ function PlaceHeader({
           )}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Weather is context only — not used for the ranking below.
+          Season fit comes from national records for the selected week, so it
+          projects future dates. Weather (always today's) is context only, not
+          part of the ranking.
         </p>
       </CardContent>
     </Card>
@@ -498,16 +559,41 @@ function LikelyList({ data }: { data: ExpectResult }) {
               key={s.species_id}
               className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-muted"
             >
-              <span className="w-5 shrink-0 pt-0.5 text-right text-xs tabular-nums text-muted-foreground">
-                {i + 1}
-              </span>
+              {s.image_url ? (
+                <a
+                  href={s.image_credit_url ?? s.image_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0"
+                  title={`Photo: ${s.image_credit ?? "Wikimedia Commons"}`}
+                >
+                  <img
+                    src={s.image_url}
+                    alt={s.name_nl ?? s.scientific_name}
+                    loading="lazy"
+                    className="size-14 rounded-lg object-cover ring-1 ring-foreground/10"
+                  />
+                </a>
+              ) : (
+                <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <Leaf className="size-4" />
+                </span>
+              )}
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {i + 1}.
+                  </span>
                   <span className="font-medium">
                     {s.name_nl ?? s.scientific_name}
                   </span>
                   <Badge className={phaseTone(s.seasonal)}>{s.phase}</Badge>
                   <Badge>{Math.round(s.seasonal * 100)}% of peak</Badge>
+                  {s.period_records > 0 && (
+                    <Badge className="bg-accent/50 text-accent-foreground">
+                      {s.period_records}× reported around then
+                    </Badge>
+                  )}
                 </span>
                 <span className="mt-0.5 block text-[11px] italic text-muted-foreground">
                   {s.scientific_name}
