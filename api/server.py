@@ -373,6 +373,28 @@ def _search_nominatim(q: str, limit: int) -> list[dict]:
     return out
 
 
+# When searching "veluwe" the government geocoder happily returns streets
+# named Veluwe before the actual Veluwe area. Prefer area-like results.
+_AREA_TYPES = {
+    "protected_area", "nature_reserve", "forest", "water", "wetland", "heath",
+    "park", "moor", "recreation_ground", "administrative", "municipality",
+    "gemeente", "provincie", "woonplaats", "city", "town", "village", "hamlet",
+}
+_STREET_TYPES = {
+    "weg", "adres", "perceel", "postcode", "pad", "straat", "road", "path",
+    "footway", "house", "railway",
+}
+
+
+def _type_rank(place: dict) -> int:
+    t = (place.get("type") or "").lower()
+    if t in _AREA_TYPES:
+        return 0
+    if t in _STREET_TYPES:
+        return 2
+    return 1
+
+
 def search_places(q: str, limit: int = 6) -> list[dict]:
     q = (q or "").strip()
     if len(q) < 3:
@@ -398,9 +420,12 @@ def search_places(q: str, limit: int = 6) -> list[dict]:
     for variant in variants:
         add(_search_pdok(variant, limit))
         add(_search_nominatim(variant, limit))
-        if len(results) >= limit:
+        # Stop at the first query form that produces anything, so a relaxed
+        # variant is only tried when the literal one finds nothing.
+        if results:
             break
 
+    results.sort(key=_type_rank)  # stable: keep relevance within each band
     results = results[:limit]
     if results:
         with _GEO_LOCK:
