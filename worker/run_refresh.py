@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--requested-by", default=None)
     args = parser.parse_args(argv)
 
-    conn = db.connect()
+    conn = db.connect_with_retry()
     try:
         db.apply_migrations(conn)
     except Exception:

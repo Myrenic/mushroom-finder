@@ -532,7 +532,7 @@ def _aoi_to_rd(conn, params: dict) -> dict:
 
 
 def main() -> None:
-    conn = connect()
+    conn = db.connect_with_retry()
     try:
         applied = db.apply_migrations(conn, "/migrations")
         print("migrations applied:", applied, flush=True)

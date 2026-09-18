@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import glob
 import os
+import time
 import uuid
 
 import psycopg
@@ -16,6 +17,22 @@ from psycopg.rows import dict_row
 
 def connect():
     return psycopg.connect(row_factory=dict_row, autocommit=False)
+
+
+def connect_with_retry(attempts: int = 40, delay: float = 2.0):
+    """Wait for Postgres to accept connections.
+
+    The API and the DB start together, and a container crashloop is a worse
+    signal than a short wait, so retry instead of dying on the first refusal.
+    """
+    last: Exception | None = None
+    for _ in range(attempts):
+        try:
+            return connect()
+        except psycopg.OperationalError as exc:
+            last = exc
+            time.sleep(delay)
+    raise last if last else RuntimeError("could not connect to postgres")
 
 
 def apply_migrations(conn, directory: str = "/migrations") -> list[str]:
