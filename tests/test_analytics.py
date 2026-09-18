@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 import datetime as dt  # noqa: E402
 
 from analytics import (  # noqa: E402
+    binomial,
     clean_query,
     query_variants,
     seasonal_score,
@@ -24,6 +25,15 @@ from analytics import (  # noqa: E402
     weekly_profile,
     window,
 )
+
+
+def test_binomial_strips_author_citation():
+    """GBIF names carry authors; Wikipedia and display want the binomial."""
+    assert binomial("Amanita muscaria (L.) Lam.") == "Amanita muscaria"
+    assert binomial("Xerocomus subtomentosus (L.) Quel.") == "Xerocomus subtomentosus"
+    assert binomial("Phallus impudicus L.") == "Phallus impudicus"
+    assert binomial("Boletus edulis") == "Boletus edulis"
+    assert binomial("") == ""
 
 
 def test_week_of_drives_the_projection():

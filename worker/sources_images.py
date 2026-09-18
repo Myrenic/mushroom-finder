@@ -15,6 +15,7 @@ from typing import Callable
 
 import requests
 
+from analytics import binomial
 from config import HTTP_TIMEOUT_S, USER_AGENT
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
@@ -22,6 +23,7 @@ COMMONS_FILE = "https://commons.wikimedia.org/wiki/File:{}"
 
 
 def _fetch(scientific_name: str) -> dict | None:
+    # Wikipedia titles are binomials; GBIF names carry the author citation.
     params = {
         "action": "query",
         "format": "json",
@@ -29,7 +31,7 @@ def _fetch(scientific_name: str) -> dict | None:
         "piprop": "thumbnail|name",
         "pithumbsize": 360,
         "redirects": 1,
-        "titles": scientific_name,
+        "titles": binomial(scientific_name),
     }
     for attempt in range(3):
         try:

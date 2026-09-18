@@ -46,6 +46,16 @@ def query_variants(q: str) -> list[str]:
 
 
 
+def binomial(scientific_name: str) -> str:
+    """Reduce 'Amanita muscaria (L.) Lam.' to 'Amanita muscaria'.
+
+    GBIF stores names with the author citation; Wikipedia article titles and
+    most lookups use the bare binomial.
+    """
+    parts = (scientific_name or "").split()
+    return " ".join(parts[:2]) if len(parts) >= 2 else (scientific_name or "").strip()
+
+
 def week_of(d: dt.date) -> int:
     """ISO week number, so a chosen date drives the seasonal projection."""
     return d.isocalendar()[1]

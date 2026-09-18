@@ -38,6 +38,7 @@ sys.path.insert(0, "/worker")
 import db  # noqa: E402
 import scoring  # noqa: E402
 from analytics import (  # noqa: E402
+    binomial,
     query_variants,
     seasonal_score,
     week_of,
@@ -556,7 +557,7 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
         out.append({
             "species_id": row["id"],
             "name_nl": row["name_nl"],
-            "scientific_name": row["scientific_name"],
+            "scientific_name": binomial(row["scientific_name"]),
             "guild": row["guild"],
             "guild_label": GUILDS.get(row["guild"], row["guild"]),
             "photo_value": row["photo_value"],
@@ -623,7 +624,7 @@ def recent_reports(conn, guild: str | None, days: int, limit: int) -> list[dict]
         "guild": r["guild"],
         "guild_label": GUILDS.get(r["guild"], r["guild"]),
         "name_nl": r["name_nl"],
-        "scientific_name": r["scientific_name"],
+        "scientific_name": binomial(r["scientific_name"]),
         "observed_on": r["observed_on"].isoformat(),
         "days_ago": (dt.date.today() - r["observed_on"]).days,
         "resolution_m": r["resolution_m"],
