@@ -77,7 +77,14 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Rendering thousands of rows both overwhelms the layout and hurts the map,
+  // so the DOM list is capped and grows on demand.
+  const [listLimit, setListLimit] = useState(60)
   const controls = useRef<MapControls | null>(null)
+
+  useEffect(() => {
+    setListLimit(60)
+  }, [guild, query, mode])
 
   const loadRuns = useCallback(async () => {
     try {
@@ -207,6 +214,8 @@ export function App() {
     )
   }, [hotspots, query])
 
+  const resultTotal =
+    mode === "history" ? visibleHotspots.length : candidates.length
   const weather = meta?.weather
   const activeRun = meta?.runs.find(
     (r) => r.status === "running" || r.status === "queued"
@@ -336,8 +345,9 @@ export function App() {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* Sidebar: results */}
-        <aside className="flex min-h-0 w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
+        {/* Sidebar: results. Bounded height so the map stays visible when the
+            layout stacks on narrow viewports. */}
+        <aside className="flex max-h-[42vh] min-h-0 w-full shrink-0 flex-col border-b lg:max-h-none lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
           <div className="hero border-b px-3 py-3">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -379,7 +389,7 @@ export function App() {
               visibleHotspots.length === 0 ? (
                 <Empty text="No hotspots yet. Run a historical refresh to build the evidence layer." />
               ) : (
-                visibleHotspots.map((h) => (
+                visibleHotspots.slice(0, listLimit).map((h) => (
                   <button
                     key={h.cell_id}
                     onClick={() => setSelected({ kind: "history", id: h.cell_id })}
@@ -407,7 +417,7 @@ export function App() {
             ) : candidates.length === 0 ? (
               <Empty text="No 10 m targets yet. Zoom into a forest or park and press '10 m now' (max 2 km across)." />
             ) : (
-              candidates.map((c) => (
+              candidates.slice(0, listLimit).map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelected({ kind: "fine", id: c.id })}
@@ -429,11 +439,22 @@ export function App() {
                 </button>
               ))
             )}
+            {resultTotal > listLimit && (
+              <div className="p-2 text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setListLimit((n) => n + 120)}
+                >
+                  Show more ({resultTotal - listLimit} more of {resultTotal})
+                </Button>
+              </div>
+            )}
           </div>
         </aside>
 
         {/* Map + detail */}
-        <main className="relative min-h-0 flex-1">
+        <main className="relative min-h-[52vh] flex-1 lg:min-h-0">
           <MapView
             hotspots={showHotspots ? visibleHotspots : []}
             candidates={showCandidates ? candidates : []}

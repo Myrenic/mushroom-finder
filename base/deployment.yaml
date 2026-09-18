@@ -99,6 +99,8 @@ spec:
               value: "services"
             - name: WORKER_IMAGE
               value: "docker.io/library/python:3.12-slim"
+            - name: WORKER_IMAGE_RASTER
+              value: "docker.io/library/python:3.12"
             - name: ADMIN_GROUPS
               value: "admin,admins"
             - name: TZ

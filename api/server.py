@@ -38,6 +38,9 @@ from config import ATTRIBUTIONS, GUILDS, MODEL_VERSION  # noqa: E402
 API_PORT = int(os.environ.get("API_PORT", "3001"))
 NAMESPACE = os.environ.get("KUBE_NAMESPACE", "services")
 WORKER_IMAGE = os.environ.get("WORKER_IMAGE", "docker.io/library/python:3.12-slim")
+# rasterio's bundled GDAL needs libexpat.so.1, which the -slim image does not
+# ship. The full Debian-based image does, so raster jobs use it.
+WORKER_IMAGE_RASTER = os.environ.get("WORKER_IMAGE_RASTER", "docker.io/library/python:3.12")
 ADMIN_GROUPS = {g.strip() for g in os.environ.get("ADMIN_GROUPS", "").split(",") if g.strip()}
 
 SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
@@ -95,6 +98,7 @@ def job_name(kind: str, run_id: str) -> str:
 def build_job(kind: str, run_id: str) -> dict:
     """Server-generated Job. The browser never influences this shape."""
     name = job_name(kind, run_id)
+    image = WORKER_IMAGE_RASTER if kind == "aoi" else WORKER_IMAGE
     labels = {"app.kubernetes.io/name": "mushroom-finder",
               "app.kubernetes.io/component": "worker"}
     return {
@@ -115,7 +119,7 @@ def build_job(kind: str, run_id: str) -> dict:
                                         "seccompProfile": {"type": "RuntimeDefault"}},
                     "initContainers": [{
                         "name": "deps",
-                        "image": WORKER_IMAGE,
+                        "image": image,
                         "command": ["/bin/sh", "-c",
                                     "pip install --no-cache-dir --target=/deps "
                                     "'psycopg[binary]' requests "
@@ -129,7 +133,7 @@ def build_job(kind: str, run_id: str) -> dict:
                     }],
                     "containers": [{
                         "name": "worker",
-                        "image": WORKER_IMAGE,
+                        "image": image,
                         "command": ["python3", "/app/run_refresh.py",
                                     "--kind=" + kind, "--run=" + run_id],
                         "env": [
