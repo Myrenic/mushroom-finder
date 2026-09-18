@@ -88,6 +88,28 @@ TAXA = [
     {"sci": "Cuphophyllus virgineus", "nl": "Sneeuwzwammetje", "guild": "grassland", "photo": 3},
     {"sci": "Hygrocybe pratensis", "nl": "Weidewasplaat", "guild": "grassland", "photo": 4},
     {"sci": "Lycoperdon perlatum", "nl": "Parelstuifzwam", "guild": "grassland", "photo": 3},
+
+    # ── Household wishlist (added 2026-09) ───────────────────────────────
+    {"sci": "Macrolepiota procera", "nl": "Grote parasolzwam", "guild": "grassland", "photo": 5},
+    {"sci": "Phallus impudicus", "nl": "Grote stinkzwam", "guild": "litter", "photo": 4},
+    {"sci": "Coprinellus micaceus", "nl": "Gladstelige glimmerinktzwam", "guild": "wood", "photo": 3},
+    {"sci": "Cyathus striatus", "nl": "Gestreept nestzwammetje", "guild": "wood", "photo": 4},
+    {"sci": "Calocera viscosa", "nl": "Kleverig koraalzwammetje", "guild": "wood", "photo": 4},
+    {"sci": "Ganoderma lucidum", "nl": "Gesteelde lakzwam", "guild": "wood", "photo": 4},
+    {"sci": "Scleroderma citrinum", "nl": "Aardappelbovist", "guild": "mycorrhizal", "photo": 3},
+    {"sci": "Auricularia auricula-judae", "nl": "Judasoor", "guild": "wood", "photo": 3},
+    {"sci": "Polyporus squamosus", "nl": "Zadelzwam", "guild": "wood", "photo": 4},
+    {"sci": "Tapinella atrotomentosa", "nl": "Dennenvoetzwam", "guild": "wood", "photo": 3},
+    {"sci": "Fuligo septica", "nl": "Heksenboter", "guild": "litter", "photo": 3},
+    {"sci": "Lepista nuda", "nl": "Paarse schijnridderhoed", "guild": "litter", "photo": 4},
+    {"sci": "Calvatia gigantea", "nl": "Reuzenbovist", "guild": "grassland", "photo": 4},
+    {"sci": "Gliophorus psittacinus", "nl": "Papegaaizwammetje", "guild": "grassland", "photo": 4},
+    {"sci": "Hygrocybe acutoconica", "nl": "Puntmutswasplaat", "guild": "grassland", "photo": 3},
+    {"sci": "Xylaria hypoxylon", "nl": "Geweizwammetje", "guild": "wood", "photo": 3},
+    # Legally protected in the Netherlands; kept in the taxon list so the
+    # record exists, but flagged sensitive so it never appears in rankings.
+    {"sci": "Cantharellus cibarius", "nl": "Cantharel (Hanenkam)", "guild": "mycorrhizal",
+     "photo": 5, "sensitive": True},
 ]
 
 # ── Attribution (shown in the UI footer) ─────────────────────────────────
@@ -131,6 +153,6 @@ ATTRIBUTIONS = [
 # spreads the same request volume across the whole record period.
 GBIF_PAGE_SIZE = 300
 GBIF_YEAR_FROM = 2005
-GBIF_MAX_RECORDS_PER_TAXON = 6000
+GBIF_MAX_RECORDS_PER_TAXON = 9000
 HTTP_TIMEOUT_S = 60
 USER_AGENT = "mushroom-finder/0.1 (private household research; contact: owner)"

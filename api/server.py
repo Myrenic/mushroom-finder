@@ -107,7 +107,9 @@ def build_job(kind: str, run_id: str) -> dict:
         "metadata": {"name": name, "namespace": NAMESPACE, "labels": labels},
         "spec": {
             "backoffLimit": 1,
-            "activeDeadlineSeconds": 3600 if kind in ("historical", "aoi") else 900,
+            # Historical imports many taxa over many years; raster AOIs are
+            # bounded and quick; weather is a few API calls.
+            "activeDeadlineSeconds": {"historical": 7200, "aoi": 1800}.get(kind, 900),
             "ttlSecondsAfterFinished": 600,
             "template": {
                 "metadata": {"labels": labels},
