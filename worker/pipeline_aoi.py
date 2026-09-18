@@ -214,7 +214,9 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None,
                 (uuid.uuid4().hex[:12], guild, c["x_rd"], c["y_rd"],
                  c["x_rd"], c["y_rd"], c["fsp"],
                  json.dumps({**c["components"], "model_version": MODEL_VERSION,
-                             "aoi": True, "aoi_key": aoi_key})),
+                             "aoi": True, "aoi_key": aoi_key,
+                             # rank within this area, so "top 10%" is local
+                             "percentile": c["percentile"]})),
             )
     conn.commit()
 

@@ -265,13 +265,22 @@ def candidates(conn, guild: str | None, limit: int) -> list[dict]:
             params,
         )
         rows = cur.fetchall()
-    return [{
-        "id": r["id"], "guild": r["guild"], "guild_label": GUILDS.get(r["guild"], r["guild"]),
-        "fsp": round(float(r["fsp"]), 3),
-        "bucket": scoring.percentile_bucket(float(r["fsp"])),
-        "confidence": r["confidence"], "components": r["components"],
-        "lat": r["lat"], "lon": r["lon"],
-    } for r in rows]
+    out = []
+    for r in rows:
+        components = r["components"] or {}
+        # Rank within the analysed area is the meaningful bucket; an area whose
+        # best cell is modest should not label all of them "lower priority".
+        pct = components.get("percentile")
+        rank = float(pct) if isinstance(pct, (int, float)) else float(r["fsp"])
+        out.append({
+            "id": r["id"], "guild": r["guild"],
+            "guild_label": GUILDS.get(r["guild"], r["guild"]),
+            "fsp": round(float(r["fsp"]), 3),
+            "bucket": scoring.percentile_bucket(rank),
+            "confidence": r["confidence"], "components": components,
+            "lat": r["lat"], "lon": r["lon"],
+        })
+    return out
 
 
 def meta(conn) -> dict:
