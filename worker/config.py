@@ -154,5 +154,9 @@ ATTRIBUTIONS = [
 GBIF_PAGE_SIZE = 300
 GBIF_YEAR_FROM = 2005
 GBIF_MAX_RECORDS_PER_TAXON = 9000
+
+# iNaturalist publishes exact coordinates; Observation.org NL does not. Records
+# with no coordinateUncertainty from this dataset are treated as precise.
+INATURALIST_DATASET = "50c9509d-22c7-4a22-a47d-8c48425ef4a7"
 HTTP_TIMEOUT_S = 60
 USER_AGENT = "mushroom-finder/0.1 (private household research; contact: owner)"

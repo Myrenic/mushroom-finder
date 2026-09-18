@@ -35,6 +35,21 @@ export interface Candidate {
   components: Record<string, number | string>
 }
 
+export interface FineCell {
+  cell_id: string
+  guild: string
+  guild_label: string
+  n: number
+  years: number
+  first_seen: string | null
+  last_seen: string | null
+  recent_n: number
+  days_ago: number | null
+  lat: number
+  lon: number
+  resolution_m: number
+}
+
 export interface Species {
   name_nl: string | null
   scientific_name: string
@@ -122,6 +137,12 @@ export const fetchHotspots = (guild?: string, limit = 800) =>
 export const fetchSpecies = (cellId: string) =>
   api<{ cell_id: string; species: Species[] }>(
     `/hotspots/${encodeURIComponent(cellId)}`
+  )
+export const fetchFineCells = (guild?: string, days = 0) =>
+  api<{ cells: FineCell[] }>(
+    `/fine-cells?limit=2000${guild ? `&guild=${encodeURIComponent(guild)}` : ""}${
+      days ? `&days=${days}` : ""
+    }`
   )
 export const fetchCandidates = (guild?: string, limit = 400) =>
   api<{ candidates: Candidate[] }>(

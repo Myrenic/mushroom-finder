@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import grid
 import scoring
-from config import MODEL_VERSION
+from config import INATURALIST_DATASET, MODEL_VERSION
 
 
 def _load_environment(conn) -> dict:
@@ -17,7 +17,19 @@ def _load_environment(conn) -> dict:
         return {row["cell_id"]: row for row in cur.fetchall()}
 
 
+def rebuild_fine_cells(conn) -> int:
+    """Rebuild the 1 km precise-record layer (exact points never leave the DB)."""
+    with conn.cursor() as cur:
+        cur.execute(grid.SQL_BACKFILL_PRECISION, {"inat": INATURALIST_DATASET})
+        cur.execute(grid.SQL_REBUILD_FINE_CELLS)
+        cur.execute("SELECT count(*) AS n FROM fine_cells")
+        count = cur.fetchone()["n"]
+    conn.commit()
+    return count
+
+
 def recompute(conn) -> int:
+    rebuild_fine_cells(conn)
     with conn.cursor() as cur:
         cur.execute(grid.SQL_CELL_GUILD_AGG)
         rows = cur.fetchall()

@@ -18,19 +18,22 @@ import {
   analyseArea,
   cancelRun,
   fetchCandidates,
+  fetchFineCells,
   fetchHotspots,
   fetchMe,
   fetchMeta,
   fetchSpecies,
   startRefresh,
   type Candidate,
+  type FineCell,
   type Hotspot,
   type Me,
   type Meta,
   type Species,
 } from "@/lib/api"
 
-type Mode = "history" | "fine"
+type Mode = "history" | "recent" | "fine"
+type SelectedKind = "history" | "recent" | "aoi"
 
 function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">(
@@ -66,13 +69,16 @@ export function App() {
   const [meta, setMeta] = useState<Meta | null>(null)
   const [hotspots, setHotspots] = useState<Hotspot[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [fineCells, setFineCells] = useState<FineCell[]>([])
   const [guilds, setGuilds] = useState<Record<string, string>>({})
   const [guild, setGuild] = useState<string>("")
   const [mode, setMode] = useState<Mode>("history")
+  const [recentDays, setRecentDays] = useState(30)
   const [showHotspots, setShowHotspots] = useState(true)
   const [showCandidates, setShowCandidates] = useState(true)
+  const [showFine, setShowFine] = useState(true)
   const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState<{ kind: Mode; id: string } | null>(null)
+  const [selected, setSelected] = useState<{ kind: SelectedKind; id: string } | null>(null)
   const [species, setSpecies] = useState<Species[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -99,13 +105,17 @@ export function App() {
 
   const loadData = useCallback(async () => {
     try {
-      const [h, c] = await Promise.all([
+      const [h, c, f] = await Promise.all([
         fetchHotspots(guild || undefined),
         fetchCandidates(guild || undefined),
+        // days=0 -> all precise cells; the UI applies the recency filter so
+        // switching the window does not need a refetch.
+        fetchFineCells(guild || undefined, 0),
       ])
       setHotspots(h.hotspots)
       setGuilds(h.guilds)
       setCandidates(c.candidates)
+      setFineCells(f.cells)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -158,15 +168,30 @@ export function App() {
   )
   const selectedCandidate = useMemo(
     () =>
-      selected?.kind === "fine"
+      selected?.kind === "aoi"
         ? candidates.find((c) => c.id === selected.id) ?? null
         : null,
     [selected, candidates]
   )
+  const selectedFine = useMemo(
+    () =>
+      selected?.kind === "recent"
+        ? fineCells.find((c) => c.cell_id === selected.id) ?? null
+        : null,
+    [selected, fineCells]
+  )
 
-  const onSelect = useCallback((kind: "hotspot" | "candidate", id: string) => {
-    setSelected({ kind: kind === "hotspot" ? "history" : "fine", id })
-  }, [])
+  const onSelect = useCallback(
+    (kind: "hotspot" | "candidate" | "fine", id: string) => {
+      const map: Record<string, SelectedKind> = {
+        hotspot: "history",
+        fine: "recent",
+        candidate: "aoi",
+      }
+      setSelected({ kind: map[kind] ?? "history", id })
+    },
+    []
+  )
 
   const trigger = async (kind: "weather" | "historical") => {
     setBusy(kind)
@@ -214,8 +239,19 @@ export function App() {
     )
   }, [hotspots, query])
 
+  // Precise 1 km cells, newest first, optionally limited to a recent window.
+  const visibleFine = useMemo(() => {
+    return fineCells
+      .filter((c) => c.days_ago !== null && c.days_ago <= recentDays)
+      .sort((a, b) => (a.days_ago ?? 9999) - (b.days_ago ?? 9999) || b.n - a.n)
+  }, [fineCells, recentDays])
+
   const resultTotal =
-    mode === "history" ? visibleHotspots.length : candidates.length
+    mode === "history"
+      ? visibleHotspots.length
+      : mode === "recent"
+        ? visibleFine.length
+        : candidates.length
   const weather = meta?.weather
   const activeRun = meta?.runs.find(
     (r) => r.status === "running" || r.status === "queued"
@@ -253,8 +289,17 @@ export function App() {
             size="sm"
             variant={mode === "history" ? "secondary" : "ghost"}
             onClick={() => setMode("history")}
+            title="5 x 5 km evidence zones"
           >
             Historical
+          </Button>
+          <Button
+            size="sm"
+            variant={mode === "recent" ? "secondary" : "ghost"}
+            onClick={() => setMode("recent")}
+            title="1 km cells from precise records"
+          >
+            Precise
           </Button>
           <Button
             size="sm"
@@ -364,7 +409,7 @@ export function App() {
                 10 m now
               </Button>
             </div>
-            <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
               <label className="flex items-center gap-1.5">
                 <input
                   type="checkbox"
@@ -376,10 +421,33 @@ export function App() {
               <label className="flex items-center gap-1.5">
                 <input
                   type="checkbox"
+                  checked={showFine}
+                  onChange={(e) => setShowFine(e.target.checked)}
+                />
+                precise (1 km)
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
                   checked={showCandidates}
                   onChange={(e) => setShowCandidates(e.target.checked)}
                 />
                 10 m targets
+              </label>
+              <label className="flex items-center gap-1.5">
+                <span>since</span>
+                <select
+                  value={recentDays}
+                  onChange={(e) => setRecentDays(Number(e.target.value))}
+                  className="h-6 rounded border border-border bg-background px-1 text-[11px]"
+                  title="Only show precise cells with a report in this window"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value={3650}>all time</option>
+                </select>
               </label>
             </div>
           </div>
@@ -414,13 +482,48 @@ export function App() {
                   </button>
                 ))
               )
+            ) : mode === "recent" ? (
+              visibleFine.length === 0 ? (
+                <Empty
+                  text={`No precise reports in the last ${recentDays} days. Precise records come from datasets with real coordinates (mainly iNaturalist); most Dutch records are rounded to 5 km.`}
+                />
+              ) : (
+                visibleFine.slice(0, listLimit).map((f) => (
+                  <button
+                    key={f.cell_id + f.guild}
+                    onClick={() => setSelected({ kind: "recent", id: f.cell_id })}
+                    className={`mb-1.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted ${
+                      selected?.id === f.cell_id ? "bg-muted" : ""
+                    }`}
+                  >
+                    <span
+                      className={`grid size-9 shrink-0 place-items-center rounded-lg text-[10px] font-semibold ${
+                        f.days_ago !== null && f.days_ago <= 30
+                          ? "bg-accent/60 text-accent-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {f.days_ago === null ? "?" : `${f.days_ago}d`}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {f.guild_label}
+                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {f.n} precise records · {f.years} years · last{" "}
+                        {f.last_seen ?? "?"}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )
             ) : candidates.length === 0 ? (
               <Empty text="No 10 m targets yet. Zoom into a forest or park and press '10 m now' (max 2 km across)." />
             ) : (
               candidates.slice(0, listLimit).map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setSelected({ kind: "fine", id: c.id })}
+                  onClick={() => setSelected({ kind: "aoi", id: c.id })}
                   className={`mb-1.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted ${
                     selected?.id === c.id ? "bg-muted" : ""
                   }`}
@@ -458,8 +561,10 @@ export function App() {
           <MapView
             hotspots={showHotspots ? visibleHotspots : []}
             candidates={showCandidates ? candidates : []}
+            fineCells={showFine ? visibleFine : []}
             showHotspots={showHotspots}
             showCandidates={showCandidates}
+            showFine={showFine}
             selectedId={selected?.id ?? null}
             onSelect={onSelect}
             controls={controls}
@@ -468,24 +573,32 @@ export function App() {
           <div className="pointer-events-none absolute top-2 left-2 z-[500] max-w-[240px]">
             <div className="pointer-events-auto rounded-lg bg-card/90 px-2.5 py-2 text-[11px] ring-1 ring-foreground/10 backdrop-blur">
               <div className="flex items-center gap-1.5 font-medium">
-                {mode === "history" ? "Historical evidence" : "10 m search targets"}
+                {mode === "history"
+                  ? "Historical evidence"
+                  : mode === "recent"
+                    ? "Precise reports (1 km)"
+                    : "10 m search targets"}
               </div>
               <p className="mt-0.5 text-muted-foreground">
                 {mode === "history"
                   ? "5 x 5 km zones where a group is repeatedly recorded. Broad, not exact."
-                  : "Experimental habitat clues inside a selected area. Search targets, never mushroom locations."}
+                  : mode === "recent"
+                    ? "1 km cells from records that carry real coordinates (mainly recent iNaturalist). Amber = reported in the last 30 days."
+                    : "Experimental habitat clues inside a selected area. Search targets, never mushroom locations."}
               </p>
             </div>
           </div>
 
-          {(selectedHotspot || selectedCandidate) && (
+          {(selectedHotspot || selectedCandidate || selectedFine) && (
             <Card className="absolute right-2 bottom-2 z-[500] max-h-[60%] w-[min(380px,calc(100%-1rem))] overflow-y-auto bg-card/95 backdrop-blur">
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <CardTitle>
                     {selectedHotspot
                       ? selectedHotspot.guild_label
-                      : selectedCandidate?.guild_label}
+                      : selectedCandidate
+                        ? selectedCandidate.guild_label
+                        : selectedFine?.guild_label}
                   </CardTitle>
                   <Button
                     size="icon"
@@ -531,6 +644,35 @@ export function App() {
                     <p className="text-muted-foreground">
                       Historical records are shown only at 5 x 5 km. Exact finds are
                       never published.
+                    </p>
+                  </>
+                )}
+                {selectedFine && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge className="bg-accent/60 text-accent-foreground">
+                        precise records
+                      </Badge>
+                      <Badge>{selectedFine.n} records</Badge>
+                      <Badge>{selectedFine.years} years</Badge>
+                      {selectedFine.days_ago !== null && (
+                        <Badge>
+                          {selectedFine.days_ago === 0
+                            ? "today"
+                            : `${selectedFine.days_ago} days ago`}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="space-y-0.5 text-muted-foreground">
+                      <div>First seen {selectedFine.first_seen ?? "?"}</div>
+                      <div>Last seen {selectedFine.last_seen ?? "?"}</div>
+                      <div>{selectedFine.recent_n} records in the last 30 days</div>
+                    </div>
+                    <p className="text-muted-foreground">
+                      Built only from records with usable coordinates, shown at
+                      1 km. This is where someone recently reported one of the
+                      curated species, so it is worth a look — not proof it is
+                      still fruiting. Exact spots are never shown.
                     </p>
                   </>
                 )}

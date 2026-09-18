@@ -285,6 +285,51 @@ def candidates(conn, guild: str | None, limit: int) -> list[dict]:
     return out
 
 
+def fine_cells(conn, guild: str | None, days: int, limit: int) -> list[dict]:
+    """1 km cells built from precise records only.
+
+    `days` > 0 filters to cells with a report in that window, which is the
+    "someone found one recently" view.
+    """
+    where = []
+    params: list = []
+    if guild:
+        where.append("guild = %s")
+        params.append(guild)
+    if days > 0:
+        where.append("last_seen >= current_date - %s")
+        params.append(days)
+    params.append(limit)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT cell_id, guild, n, years, first_seen, last_seen, recent_n,
+                   center_lat, center_lon
+            FROM fine_cells
+            {clause}
+            ORDER BY (last_seen >= current_date - 30) DESC, last_seen DESC, n DESC
+            LIMIT %s
+            """.format(clause=clause),
+            params,
+        )
+        rows = cur.fetchall()
+    return [{
+        "cell_id": r["cell_id"],
+        "guild": r["guild"],
+        "guild_label": GUILDS.get(r["guild"], r["guild"]),
+        "n": r["n"],
+        "years": r["years"],
+        "first_seen": r["first_seen"].isoformat() if r["first_seen"] else None,
+        "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
+        "recent_n": r["recent_n"],
+        "days_ago": (dt.date.today() - r["last_seen"]).days if r["last_seen"] else None,
+        "lat": r["center_lat"],
+        "lon": r["center_lon"],
+        "resolution_m": 1000,
+    } for r in rows]
+
+
 def meta(conn) -> dict:
     with conn.cursor() as cur:
         cur.execute("SELECT id, provider, title, source_url, licence, attribution, "
@@ -383,6 +428,11 @@ class Handler(BaseHTTPRequestHandler):
                     guild = (query.get("guild") or [None])[0]
                     limit = min(2000, int((query.get("limit") or ["400"])[0]))
                     return self._send(200, {"candidates": candidates(conn, guild, limit)})
+                if path == "/api/fine-cells":
+                    guild = (query.get("guild") or [None])[0]
+                    days = max(0, min(3650, int((query.get("days") or ["0"])[0])))
+                    limit = min(5000, int((query.get("limit") or ["2000"])[0]))
+                    return self._send(200, {"cells": fine_cells(conn, guild, days, limit)})
                 if path == "/api/refresh":
                     with conn.cursor() as cur:
                         cur.execute(

@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
-from config import ATTRIBUTIONS, TAXA
+from config import ATTRIBUTIONS, INATURALIST_DATASET, TAXA
 import db
 import grid
 import pipeline_score
@@ -51,16 +51,18 @@ def _insert_occurrences(conn, rows: list[dict]) -> int:
             params = []
             for r in batch:
                 values.append("(%s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), "
-                              "%s, %s, %s, %s)")
+                              "%s, %s, %s, %s, %s, %s)")
                 params.extend([
                     r.get("dataset_id"), r.get("species_id"), r.get("observed_on"),
                     r.get("source_id"), r.get("lon"), r.get("lat"),
                     r.get("coord_uncertainty_m"), r.get("generalized"),
                     r.get("licence"), json.dumps(r.get("raw", {})),
+                    r.get("source_dataset"), r.get("precise", False),
                 ])
             cur.execute(
                 "INSERT INTO occurrences (dataset_id, species_id, observed_on, source_id, "
-                "geom, coord_uncertainty_m, generalized, licence, raw) VALUES "
+                "geom, coord_uncertainty_m, generalized, licence, raw, source_dataset, "
+                "precise) VALUES "
                 + ", ".join(values)
                 + " ON CONFLICT (dataset_id, source_id) DO NOTHING",
                 params,
@@ -68,6 +70,16 @@ def _insert_occurrences(conn, rows: list[dict]) -> int:
             inserted += cur.rowcount
     conn.commit()
     return inserted
+
+
+def _is_precise(rec: dict) -> bool:
+    """Usable near 1 km? iNaturalist is exact; Observation.org NL is 5 km."""
+    uncertainty = rec.get("coord_uncertainty_m")
+    if uncertainty is not None:
+        return float(uncertainty) <= 1000.0
+    raw = rec.get("raw") or {}
+    return (rec.get("dataset_key") == INATURALIST_DATASET
+            and not raw.get("informationWithheld"))
 
 
 def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) -> dict:
@@ -123,6 +135,8 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) 
                     **rec,
                     "dataset_id": GBIF_DATASET["id"],
                     "species_id": species_id,
+                    "source_dataset": rec.get("dataset_key"),
+                    "precise": _is_precise(rec),
                 })
         total_inserted += _insert_occurrences(conn, rows)
 

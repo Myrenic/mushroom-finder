@@ -75,6 +75,54 @@ SET cell_id = 'c' || floor(ST_X(ST_Transform(o.geom, 28992)) / {size})::bigint
 WHERE o.cell_id IS NULL AND o.geom IS NOT NULL;
 """
 
+# Classify stored records as precise (usable near 1 km) or coarse (5 km).
+# iNaturalist publishes exact coordinates; Observation.org NL does not.
+SQL_BACKFILL_PRECISION = """
+UPDATE occurrences SET
+    source_dataset = coalesce(source_dataset, raw->>'datasetKey'),
+    precise = (
+        (coord_uncertainty_m IS NOT NULL AND coord_uncertainty_m <= 1000)
+        OR (coord_uncertainty_m IS NULL
+            AND raw->>'datasetKey' = %(inat)s
+            AND (raw->>'informationWithheld') IS NULL)
+    )
+WHERE source_dataset IS NULL;
+"""
+
+# Rebuild the 1 km layer from precise records only. Exact points never leave
+# the database: the cell centre is the finest thing displayed.
+SQL_REBUILD_FINE_CELLS = """
+DELETE FROM fine_cells;
+INSERT INTO fine_cells (cell_id, guild, n, years, first_seen, last_seen,
+                        recent_n, center_lat, center_lon, updated_at)
+WITH pts AS (
+    SELECT ST_Transform(o.geom, 28992) AS g, s.guild, o.observed_on
+    FROM occurrences o
+    JOIN species s ON s.id = o.species_id
+    WHERE o.precise AND s.enabled AND NOT s.sensitive AND o.geom IS NOT NULL
+),
+agg AS (
+    SELECT floor(ST_X(g) / 1000)::bigint AS ix,
+           floor(ST_Y(g) / 1000)::bigint AS iy,
+           guild,
+           count(*)::int AS n,
+           count(DISTINCT date_part('year', observed_on))::int AS years,
+           min(observed_on) AS first_seen,
+           max(observed_on) AS last_seen,
+           count(*) FILTER (WHERE observed_on >= current_date - 30)::int AS recent_n
+    FROM pts
+    GROUP BY 1, 2, 3
+)
+SELECT 'r' || ix || '_' || iy,
+       guild, n, years, first_seen, last_seen, recent_n,
+       ST_Y(ST_Transform(ST_Centroid(ST_MakeEnvelope(ix * 1000, iy * 1000,
+              ix * 1000 + 1000, iy * 1000 + 1000, 28992)), 4326)),
+       ST_X(ST_Transform(ST_Centroid(ST_MakeEnvelope(ix * 1000, iy * 1000,
+              ix * 1000 + 1000, iy * 1000 + 1000, 28992)), 4326)),
+       now()
+FROM agg;
+"""
+
 # Per (cell, guild): records, richness, recurrence proxy, last seen.
 SQL_CELL_GUILD_AGG = """
 WITH taxon_guild AS (
