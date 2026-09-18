@@ -61,6 +61,9 @@ KUBE_HOST = "https://kubernetes.default.svc"
 ALL_KINDS = {"weather", "historical", "maintenance", "aoi"}
 
 MAX_AOI_SIDE_M = 2000
+
+# Minimum share of a species' peak week before it is worth listing.
+MIN_SEASONAL = 0.10
 NL_RD_LIMITS = {"xmin": -10000.0, "ymin": 280000.0, "xmax": 300000.0, "ymax": 650000.0}
 
 
@@ -529,7 +532,10 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
         if not any(arr):
             continue
         seasonal = seasonal_score(arr, week)
-        if seasonal <= 0:
+        # A floor, because a single stray record in an off week gives a tiny
+        # non-zero seasonal score and would otherwise list a species as
+        # "in season" in midwinter.
+        if seasonal < MIN_SEASONAL:
             continue
         confidence = min(1.0, math.log1p(row["n"]) / math.log1p(50.0))
         expected = seasonal * (0.4 + 0.6 * confidence)
