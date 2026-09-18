@@ -73,7 +73,7 @@ export function App() {
   const [guilds, setGuilds] = useState<Record<string, string>>({})
   const [guild, setGuild] = useState<string>("")
   const [mode, setMode] = useState<Mode>("history")
-  const [recentDays, setRecentDays] = useState(30)
+  const [recentDays, setRecentDays] = useState(90)
   const [showHotspots, setShowHotspots] = useState(true)
   const [showCandidates, setShowCandidates] = useState(true)
   const [showFine, setShowFine] = useState(true)
@@ -299,7 +299,7 @@ export function App() {
             onClick={() => setMode("recent")}
             title="1 km cells from precise records"
           >
-            Precise
+            Precise (1 km)
           </Button>
           <Button
             size="sm"
@@ -442,7 +442,6 @@ export function App() {
                   className="h-6 rounded border border-border bg-background px-1 text-[11px]"
                   title="Only show precise cells with a report in this window"
                 >
-                  <option value={7}>7 days</option>
                   <option value={14}>14 days</option>
                   <option value={30}>30 days</option>
                   <option value={90}>90 days</option>
