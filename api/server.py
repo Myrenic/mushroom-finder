@@ -19,7 +19,10 @@ import datetime as dt
 import json
 import math
 import os
+import re
 import ssl
+import threading
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -34,6 +37,7 @@ from psycopg.rows import dict_row  # noqa: E402
 sys.path.insert(0, "/worker")
 import db  # noqa: E402
 import scoring  # noqa: E402
+from analytics import query_variants, seasonal_score, weekly_profile  # noqa: E402
 from config import ATTRIBUTIONS, GUILDS, MODEL_VERSION  # noqa: E402
 
 API_PORT = int(os.environ.get("API_PORT", "3001"))
@@ -286,6 +290,126 @@ def candidates(conn, guild: str | None, limit: int) -> list[dict]:
     return out
 
 
+# ── Place search ─────────────────────────────────────────────────────────
+# Two providers, because neither is complete: PDOK (Dutch government) is best
+# for towns and addresses, Nominatim/OSM is best for nature areas and water.
+# Dutch diminutives ("hemelriekje") are not indexed anywhere, so the query is
+# progressively relaxed before giving up.
+_GEO_CACHE: dict[str, list] = {}
+_GEO_LOCK = threading.Lock()
+_GEO_LAST = [0.0]
+_GEO_CACHE_MAX = 300
+
+PDOK_FREE = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free"
+NOMINATIM = "https://nominatim.openstreetmap.org/search"
+POINT_RE = re.compile(r"POINT\(\s*([-\d.]+)\s+([-\d.]+)\s*\)")
+
+
+def _http_json(url: str, params: dict, timeout: int = 20):
+    import urllib.parse
+
+    full = url + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(full, headers={
+        "User-Agent": "mushroom-finder/0.1 (private household tool)",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except Exception:  # noqa: BLE001 - a dead provider must not break search
+        return None
+
+
+def _search_pdok(q: str, limit: int) -> list[dict]:
+    data = _http_json(PDOK_FREE, {
+        "q": q, "rows": limit,
+        "fl": "id,weergavenaam,type,centroide_ll,gemeentenaam,provincienaam",
+    })
+    out = []
+    for doc in ((data or {}).get("response", {}) or {}).get("docs", []):
+        m = POINT_RE.search(doc.get("centroide_ll") or "")
+        if not m:
+            continue
+        out.append({
+            "id": "pdok:" + str(doc.get("id")),
+            "name": doc.get("weergavenaam") or q,
+            "type": doc.get("type") or "place",
+            "lat": float(m.group(2)),
+            "lon": float(m.group(1)),
+            "municipality": doc.get("gemeentenaam"),
+            "province": doc.get("provincienaam"),
+            "source": "PDOK",
+        })
+    return out
+
+
+def _search_nominatim(q: str, limit: int) -> list[dict]:
+    # Nominatim's usage policy allows max one request per second.
+    with _GEO_LOCK:
+        wait = 1.1 - (time.time() - _GEO_LAST[0])
+        if wait > 0:
+            time.sleep(wait)
+        _GEO_LAST[0] = time.time()
+    data = _http_json(NOMINATIM, {
+        "q": q, "format": "json", "limit": limit, "addressdetails": 1,
+    })
+    out = []
+    for doc in data or []:
+        try:
+            lat, lon = float(doc["lat"]), float(doc["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        addr = doc.get("address") or {}
+        out.append({
+            "id": "osm:" + str(doc.get("osm_id") or doc.get("place_id")),
+            "name": doc.get("display_name") or q,
+            "type": doc.get("type") or "place",
+            "lat": lat,
+            "lon": lon,
+            "municipality": addr.get("municipality") or addr.get("town") or addr.get("village"),
+            "province": addr.get("state"),
+            "source": "OpenStreetMap",
+        })
+    return out
+
+
+def search_places(q: str, limit: int = 6) -> list[dict]:
+    q = (q or "").strip()
+    if len(q) < 3:
+        return []
+    key = q.lower()
+    with _GEO_LOCK:
+        if key in _GEO_CACHE:
+            return _GEO_CACHE[key]
+
+    variants = query_variants(q)
+
+    results: list[dict] = []
+    seen = set()
+
+    def add(items):
+        for it in items:
+            k = (round(it["lat"], 3), round(it["lon"], 3))
+            if k in seen:
+                continue
+            seen.add(k)
+            results.append(it)
+
+    for variant in variants:
+        add(_search_pdok(variant, limit))
+        add(_search_nominatim(variant, limit))
+        if len(results) >= limit:
+            break
+
+    results = results[:limit]
+    if results:
+        with _GEO_LOCK:
+            if len(_GEO_CACHE) >= _GEO_CACHE_MAX:
+                _GEO_CACHE.clear()
+            _GEO_CACHE[key] = results
+    return results
+
+
 SQL_EXPECT = """
 WITH me AS (
     SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography AS g
@@ -320,27 +444,14 @@ LIMIT 60
 """
 
 
-def _weekly_profile(wks, cnts) -> list[float]:
-    """53-slot week-of-year count array (index 0 = ISO week 1)."""
-    arr = [0.0] * 53
-    for w, c in zip(wks or [], cnts or []):
-        if w and 1 <= int(w) <= 53:
-            arr[int(w) - 1] += float(c)
-    return arr
-
-
-def _window(arr: list[float], week: int) -> float:
-    """Counts in a 3-week window centred on `week`, wrapping the year."""
-    i = week - 1
-    return arr[(i - 1) % 53] + arr[i % 53] + arr[(i + 1) % 53]
-
-
-def expect_here(conn, lat: float, lon: float, radius_m: int, condition: float) -> dict:
+def expect_here(conn, lat: float, lon: float, radius_m: int,
+                weather: dict | None = None) -> dict:
     """Rank the species known in this area by how likely they are right now.
 
-    Combines local records, the species' own national phenology (how close
-    today is to its peak), and the current weather. It answers "what should I
-    look for here today", which the hotspot score alone never did.
+    Ranking uses local records and the species' own national phenology (how
+    close today is to its peak). Weather is deliberately NOT in the ranking:
+    a national test found only a ~10% effect that does not survive per-guild
+    scrutiny, so it is reported as context for the reader to judge.
     """
     with conn.cursor() as cur:
         cur.execute(SQL_EXPECT, {"lat": lat, "lon": lon, "radius_m": radius_m})
@@ -350,16 +461,14 @@ def expect_here(conn, lat: float, lon: float, radius_m: int, condition: float) -
     month = dt.date.today().month
     out = []
     for row in rows:
-        arr = _weekly_profile(row["wks"], row["cnts"])
+        arr = weekly_profile(row["wks"], row["cnts"])
         if not any(arr):
             continue
-        peak = max(_window(arr, w) for w in range(1, 54))
-        if peak <= 0:
+        seasonal = seasonal_score(arr, week)
+        if seasonal <= 0:
             continue
-        current = _window(arr, week)
-        seasonal = current / peak
         confidence = min(1.0, math.log1p(row["n"]) / math.log1p(50.0))
-        expected = seasonal * (0.5 + 0.5 * condition) * (0.4 + 0.6 * confidence)
+        expected = seasonal * (0.4 + 0.6 * confidence)
         if seasonal >= 0.7:
             phase = "at peak"
         elif seasonal >= 0.35:
@@ -380,9 +489,6 @@ def expect_here(conn, lat: float, lon: float, radius_m: int, condition: float) -
                     "today" if days_ago <= 1 else "{} days ago".format(days_ago)
                 )
             )
-        reasons.append(
-            "good current conditions" if condition >= 0.6 else "conditions are marginal"
-        )
         out.append({
             "species_id": row["id"],
             "name_nl": row["name_nl"],
@@ -407,7 +513,8 @@ def expect_here(conn, lat: float, lon: float, radius_m: int, condition: float) -
         "radius_km": radius_m // 1000,
         "week": week,
         "month": month,
-        "condition": round(condition, 3),
+        # Context only; not an input to the ranking above.
+        "weather": weather or {},
         "species": out,
     }
 
@@ -614,8 +721,11 @@ class Handler(BaseHTTPRequestHandler):
                     if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 7.5):
                         return self._send(400, {"error": "point is outside the Netherlands"})
                     radius_km = min(25, max(1, int((query.get("radius_km") or ["5"])[0])))
-                    cond = latest_condition(conn)["condition"]
-                    return self._send(200, expect_here(conn, lat, lon, radius_km * 1000, cond))
+                    return self._send(200, expect_here(
+                        conn, lat, lon, radius_km * 1000, latest_condition(conn)))
+                if path == "/api/search":
+                    q = (query.get("q") or [""])[0]
+                    return self._send(200, {"results": search_places(q)})
                 if path == "/api/refresh":
                     with conn.cursor() as cur:
                         cur.execute(

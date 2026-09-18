@@ -1,67 +1,42 @@
 /**
- * Typed client for the Mushroom Finder API.
+ * Mushroom Finder API client.
  *
- * The SPA only ever talks to /api/*; nginx proxies that to the in-pod API,
- * which is the only thing allowed to touch the database or the cluster.
+ * The product question is "what is likely fruiting at this place this week?",
+ * so the SPA is built around a place search and an expectation list. The map
+ * is background context, not the interface.
  */
 
 const API = "/api"
 
-export interface Hotspot {
-  cell_id: string
-  guild: string
-  guild_label: string
-  lat: number
-  lon: number
-  static_score: number
-  final_score: number
-  condition_factor: number
-  season_factor: number
-  confidence: "high" | "medium" | "low"
-  richness: number
-  last_seen: string | null
-  components: Record<string, number | string>
+export interface Me {
+  email: string
+  user: string
+  groups: string[]
+  authenticated: boolean
 }
 
-export interface Candidate {
+export interface Place {
   id: string
-  guild: string
-  guild_label: string
+  name: string
+  type: string
   lat: number
   lon: number
-  fsp: number
-  bucket: string
-  confidence: string
-  components: Record<string, number | string>
+  municipality?: string | null
+  province?: string | null
+  source: string
 }
 
-export interface FineCell {
-  cell_id: string
-  guild: string
-  guild_label: string
-  n: number
-  years: number
-  first_seen: string | null
-  last_seen: string | null
-  recent_n: number
-  days_ago: number | null
-  lat: number
-  lon: number
-  resolution_m: number
-}
-
-export interface RecentReport {
-  id: string
-  guild: string
-  guild_label: string
-  name_nl: string | null
-  scientific_name: string
-  observed_on: string
-  days_ago: number
-  resolution_m: number
-  precise: boolean
-  lat: number
-  lon: number
+export interface Weather {
+  condition?: number
+  as_of?: string | null
+  precip_7d?: number
+  precip_14d?: number
+  precip_21d?: number
+  dry_days?: number
+  temp_c?: number
+  soil_temp_c?: number
+  soil_moisture?: number
+  forecast_precip_3d?: number
 }
 
 export interface ExpectSpecies {
@@ -88,30 +63,22 @@ export interface ExpectResult {
   radius_km: number
   week: number
   month: number
-  condition: number
+  weather: Weather
   species: ExpectSpecies[]
 }
 
-export interface Species {
+export interface RecentReport {
+  id: string
+  guild: string
+  guild_label: string
   name_nl: string | null
   scientific_name: string
-  guild: string
-  photo_value: number
-  n: number
-  last_seen: string | null
-}
-
-export interface Weather {
-  condition: number
-  as_of: string | null
-  precip_7d?: number
-  precip_14d?: number
-  precip_21d?: number
-  dry_days?: number
-  temp_c?: number
-  soil_temp_c?: number
-  soil_moisture?: number
-  forecast_precip_3d?: number
+  observed_on: string
+  days_ago: number
+  resolution_m: number
+  precise: boolean
+  lat: number
+  lon: number
 }
 
 export interface RefreshRun {
@@ -124,40 +91,21 @@ export interface RefreshRun {
   started_at: string | null
   finished_at: string | null
   error: string | null
-  stats?: Record<string, unknown> | null
-}
-
-export interface DatasetInfo {
-  id: string
-  provider: string
-  title: string
-  source_url: string
-  licence: string
-  attribution: string
-  last_success_at: string | null
-}
-
-export interface Attribution {
-  id: string
-  label: string
-  url: string
-  licence: string
 }
 
 export interface Meta {
   model_version: string
-  datasets: DatasetInfo[]
-  layers: Array<{ layer: string; version: string; resolution_m: number | null }>
+  datasets: Array<{
+    id: string
+    provider: string
+    title: string
+    source_url: string
+    licence: string
+    last_success_at: string | null
+  }>
   runs: RefreshRun[]
-  attributions: Attribution[]
+  attributions: Array<{ id: string; label: string; url: string; licence: string }>
   weather: Weather
-}
-
-export interface Me {
-  email: string
-  user: string
-  groups: string[]
-  authenticated: boolean
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -171,34 +119,15 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const fetchMe = () => api<Me>("/me")
 export const fetchMeta = () => api<Meta>("/meta")
-export const fetchWeather = () => api<Weather>("/weather")
-export const fetchHotspots = (guild?: string, limit = 800) =>
-  api<{ hotspots: Hotspot[]; guilds: Record<string, string> }>(
-    `/hotspots?limit=${limit}${guild ? `&guild=${encodeURIComponent(guild)}` : ""}`
-  )
-export const fetchSpecies = (cellId: string) =>
-  api<{ cell_id: string; species: Species[] }>(
-    `/hotspots/${encodeURIComponent(cellId)}`
-  )
-export const fetchFineCells = (guild?: string, days = 0) =>
-  api<{ cells: FineCell[] }>(
-    `/fine-cells?limit=2000${guild ? `&guild=${encodeURIComponent(guild)}` : ""}${
-      days ? `&days=${days}` : ""
-    }`
-  )
-export const fetchRecent = (guild?: string, days = 90) =>
-  api<{ reports: RecentReport[] }>(
-    `/recent?limit=1500&days=${days}${guild ? `&guild=${encodeURIComponent(guild)}` : ""}`
-  )
-export const fetchExpect = (lat: number, lon: number, radiusKm = 5) =>
-  api<ExpectResult>(
-    `/expect?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`
-  )
-export const fetchCandidates = (guild?: string, limit = 400) =>
-  api<{ candidates: Candidate[] }>(
-    `/candidates?limit=${limit}${guild ? `&guild=${encodeURIComponent(guild)}` : ""}`
-  )
-export const fetchRefreshRuns = () => api<{ runs: RefreshRun[] }>("/refresh")
+
+export const searchPlaces = (q: string) =>
+  api<{ results: Place[] }>(`/search?q=${encodeURIComponent(q)}`)
+
+export const fetchExpect = (lat: number, lon: number, radiusKm: number) =>
+  api<ExpectResult>(`/expect?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`)
+
+export const fetchRecent = (days = 90) =>
+  api<{ reports: RecentReport[] }>(`/recent?limit=1500&days=${days}`)
 
 export const startRefresh = (kind: "weather" | "historical") =>
   api<{ run_id: string; kind: string }>("/refresh", {
@@ -207,15 +136,23 @@ export const startRefresh = (kind: "weather" | "historical") =>
     body: JSON.stringify({ kind }),
   })
 
-export const analyseArea = (
-  bbox: { south: number; west: number; north: number; east: number },
-  guild: string
-) =>
-  api<{ run_id: string; kind: string }>("/aoi", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bbox_wgs84: bbox, guild }),
-  })
-
 export const cancelRun = (runId: string) =>
   api<{ ok: boolean }>(`/refresh/${encodeURIComponent(runId)}`, { method: "DELETE" })
+
+/** Great-circle distance in km, for filtering nearby reports client-side. */
+export function distanceKm(
+  aLat: number,
+  aLon: number,
+  bLat: number,
+  bLon: number
+): number {
+  const R = 6371
+  const dLat = ((bLat - aLat) * Math.PI) / 180
+  const dLon = ((bLon - aLon) * Math.PI) / 180
+  const la1 = (aLat * Math.PI) / 180
+  const la2 = (bLat * Math.PI) / 180
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}

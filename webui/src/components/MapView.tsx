@@ -1,61 +1,31 @@
 import { useEffect, useRef } from "react"
 import L from "leaflet"
 
-import type { Candidate, FineCell, Hotspot, RecentReport } from "@/lib/api"
-
-export interface MapControls {
-  getBounds: () => { south: number; west: number; north: number; east: number } | null
-}
+import type { RecentReport } from "@/lib/api"
 
 interface Props {
-  hotspots: Hotspot[]
-  candidates: Candidate[]
-  fineCells: FineCell[]
-  recentReports: RecentReport[]
-  showHotspots: boolean
-  showCandidates: boolean
-  showFine: boolean
-  showRecent: boolean
-  selectedId: string | null
-  onSelect: (kind: "hotspot" | "candidate" | "fine", id: string) => void
-  controls: React.MutableRefObject<MapControls | null>
+  center: { lat: number; lon: number } | null
+  radiusKm: number
+  reports: RecentReport[]
 }
 
-// Green (low) -> amber (high), readable in both themes.
-function scoreColor(score: number): string {
-  const s = Math.max(0, Math.min(1, score))
-  const hue = 140 - s * 95
-  const light = 62 - s * 14
-  return `hsl(${hue} 65% ${light}%)`
-}
-
-export function MapView({
-  hotspots,
-  candidates,
-  fineCells,
-  recentReports,
-  showHotspots,
-  showCandidates,
-  showFine,
-  showRecent,
-  selectedId,
-  onSelect,
-  controls,
-}: Props) {
+/**
+ * Context map: where the searched place is, how big the analysis radius is,
+ * and what has been reported nearby. It is deliberately not the interface —
+ * the record resolution (5 km) does not support walking to a point.
+ */
+export function MapView({ center, radiusKm, reports }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
-  const selectRef = useRef(onSelect)
-  selectRef.current = onSelect
 
-  // Create the map once.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, {
       center: [52.15, 5.35],
       zoom: 8,
       preferCanvas: true,
-      zoomControl: true,
+      scrollWheelZoom: true,
     })
     L.tileLayer(
       "https://service.pdok.nl/kadaster/brt-achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png",
@@ -68,117 +38,65 @@ export function MapView({
     ).addTo(map)
     layerRef.current = L.layerGroup().addTo(map)
     mapRef.current = map
-    controls.current = {
-      getBounds: () => {
-        const b = map.getBounds()
-        return {
-          south: b.getSouth(),
-          west: b.getWest(),
-          north: b.getNorth(),
-          east: b.getEast(),
-        }
-      },
-    }
+    const invalidate = () => map.invalidateSize()
+    const t = window.setTimeout(invalidate, 250)
+    window.addEventListener("resize", invalidate)
     return () => {
+      window.clearTimeout(t)
+      window.removeEventListener("resize", invalidate)
       map.remove()
       mapRef.current = null
       layerRef.current = null
-      controls.current = null
     }
-  }, [controls])
+  }, [])
 
-  // Redraw markers when data or toggles change.
   useEffect(() => {
+    const map = mapRef.current
     const group = layerRef.current
-    if (!group) return
+    if (!map || !group) return
     group.clearLayers()
 
-    if (showHotspots) {
-      for (const h of hotspots) {
-        const marker = L.circleMarker([h.lat, h.lon], {
-          radius: 5 + h.final_score * 13,
-          color: h.cell_id === selectedId ? "#111" : scoreColor(h.final_score),
-          weight: h.cell_id === selectedId ? 3 : 1,
-          fillColor: scoreColor(h.final_score),
-          fillOpacity: 0.55,
-        })
-        marker.bindTooltip(
-          `${h.guild_label}<br/>search priority ${h.final_score.toFixed(2)} · ${h.confidence} confidence`,
-          { direction: "top" }
-        )
-        marker.on("click", () => selectRef.current("hotspot", h.cell_id))
-        group.addLayer(marker)
-      }
+    if (center) {
+      L.circle([center.lat, center.lon], {
+        radius: radiusKm * 1000,
+        color: "#15803d",
+        weight: 1,
+        fillColor: "#22c55e",
+        fillOpacity: 0.08,
+      }).addTo(group)
+      L.circleMarker([center.lat, center.lon], {
+        radius: 6,
+        color: "#14532d",
+        weight: 2,
+        fillColor: "#16a34a",
+        fillOpacity: 1,
+      })
+        .bindTooltip("Searched place — records are searched in the circle")
+        .addTo(group)
     }
 
-    if (showFine) {
-      for (const f of fineCells) {
-        const fresh = f.days_ago !== null && f.days_ago <= 30
-        const marker = L.circleMarker([f.lat, f.lon], {
-          radius: fresh ? 7 : 4 + Math.min(5, f.n / 4),
-          color: fresh ? "#b45309" : "#a16207",
-          weight: fresh ? 2 : 1,
-          fillColor: fresh ? "#f59e0b" : "#fbbf24",
-          fillOpacity: fresh ? 0.9 : 0.55,
-        })
-        marker.bindTooltip(
-          `${f.guild_label}<br/>${f.n} precise records · last ${f.last_seen ?? "?"}` +
-            (fresh ? ` · ${f.days_ago} days ago` : ""),
-          { direction: "top" }
-        )
-        marker.on("click", () => selectRef.current("fine", f.cell_id))
-        group.addLayer(marker)
-      }
-    }
-
-    if (showRecent) {
-      for (const r of recentReports) {
-        const fresh = r.days_ago <= 30
-        const marker = L.circleMarker([r.lat, r.lon], {
-          radius: r.precise ? 5 : 7,
-          color: fresh ? "#b45309" : "#78716c",
-          weight: fresh ? 2 : 1,
-          fillColor: fresh ? "#f59e0b" : "#a8a29e",
-          fillOpacity: fresh ? 0.9 : 0.5,
-          dashArray: r.precise ? undefined : "2,2",
-        })
-        marker.bindTooltip(
+    for (const r of reports) {
+      const fresh = r.days_ago <= 30
+      L.circleMarker([r.lat, r.lon], {
+        radius: r.precise ? 5 : 7,
+        color: fresh ? "#b45309" : "#78716c",
+        weight: fresh ? 2 : 1,
+        fillColor: fresh ? "#f59e0b" : "#a8a29e",
+        fillOpacity: fresh ? 0.9 : 0.5,
+        dashArray: r.precise ? undefined : "2,2",
+      })
+        .bindTooltip(
           `${r.name_nl ?? r.scientific_name}<br/>${r.observed_on} · ${r.days_ago} days ago` +
-            `<br/>${r.precise ? "1 km precise" : "5 km area (generalised)"}`,
-          { direction: "top" }
+            `<br/>${r.precise ? "1 km precise" : "5 km area (generalised)"}`
         )
-        group.addLayer(marker)
-      }
+        .addTo(group)
     }
 
-    if (showCandidates) {
-      for (const c of candidates) {
-        const marker = L.circleMarker([c.lat, c.lon], {
-          radius: 4,
-          color: "#1d4ed8",
-          weight: 1,
-          fillColor: "#3b82f6",
-          fillOpacity: 0.9,
-        })
-        marker.bindTooltip(
-          `10 m search target · ${c.guild_label}<br/>${c.bucket}`,
-          { direction: "top" }
-        )
-        marker.on("click", () => selectRef.current("candidate", c.id))
-        group.addLayer(marker)
-      }
+    if (center) {
+      map.setView([center.lat, center.lon], radiusKm <= 2 ? 13 : radiusKm <= 5 ? 12 : 11)
+      window.setTimeout(() => map.invalidateSize(), 100)
     }
-  }, [
-    hotspots,
-    candidates,
-    fineCells,
-    recentReports,
-    showHotspots,
-    showCandidates,
-    showFine,
-    showRecent,
-    selectedId,
-  ])
+  }, [center, radiusKm, reports])
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return <div ref={containerRef} className="h-full w-full rounded-xl" />
 }
