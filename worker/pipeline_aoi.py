@@ -215,10 +215,9 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None,
 
     aoi_key = _aoi_key(xmin, ymin, xmax, ymax, guild)
     with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM candidate_sites WHERE components->>'aoi_key' = %s",
-            (aoi_key,),
-        )
+        # Only the most recent analysis is shown. Accumulating targets from
+        # several unrelated areas turned the map into a confusing swarm.
+        cur.execute("DELETE FROM candidate_sites WHERE components->>'aoi' = 'true'")
         for c in top:
             cur.execute(
                 """
