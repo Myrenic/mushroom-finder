@@ -144,6 +144,13 @@ ATTRIBUTIONS = [
         "url": "https://open-meteo.com/",
         "licence": "CC BY 4.0",
     },
+    {
+        # Observation photos are CC BY-NC-ND and are deliberately not used.
+        "id": "wikimedia",
+        "label": "Species photos: Wikimedia Commons (free licences, see each file)",
+        "url": "https://commons.wikimedia.org/",
+        "licence": "varies per file",
+    },
 ]
 
 # ── GBIF sampling budget ─────────────────────────────────────────────────
