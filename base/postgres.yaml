@@ -1,0 +1,106 @@
+# PostGIS for provenance, coarse hotspots, candidate clusters, scores and
+# refresh-run state. National rasters never live here (see docs/storage.md).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mushroom-finder-postgres
+  namespace: services
+  labels:
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: postgres
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn-2-replicas
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mushroom-finder-postgres
+  namespace: services
+  labels:
+    app: mushroom-finder-postgres
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mushroom-finder-postgres
+  template:
+    metadata:
+      labels:
+        app: mushroom-finder-postgres
+        app.kubernetes.io/name: mushroom-finder
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: docker.io/postgis/postgis:16-3.4
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: mushroom
+            - name: POSTGRES_DB
+              value: mushroom
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mushroom-finder-db
+                  key: password
+            - name: TZ
+              value: "${TZ}"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "mushroom", "-d", "mushroom"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mushroom-finder-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mushroom-finder-postgres
+  namespace: services
+  labels:
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: postgres
+spec:
+  selector:
+    app: mushroom-finder-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

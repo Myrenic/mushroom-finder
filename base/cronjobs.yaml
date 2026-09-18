@@ -1,0 +1,312 @@
+# Scheduled refreshes. The API creates the same worker shape on demand for the
+# two UI buttons ("refresh weather" / "refresh historical data").
+#
+# Worker pods have no Kubernetes token and no RBAC; they only reach DNS,
+# PostGIS and the public data providers.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mushroom-weather
+  namespace: services
+  labels:
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: worker
+spec:
+  schedule: "0 */3 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mushroom-finder
+            app.kubernetes.io/component: worker
+        spec:
+          serviceAccountName: mushroom-finder-worker
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: deps
+              image: docker.io/library/python:3.12-slim
+              command:
+                - /bin/sh
+                - -c
+                - "pip install --no-cache-dir --target=/deps 'psycopg[binary]' requests"
+              volumeMounts:
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          containers:
+            - name: worker
+              image: docker.io/library/python:3.12-slim
+              command: ["python3", "/app/run_refresh.py", "--kind=weather"]
+              env:
+                - name: PYTHONPATH
+                  value: "/deps"
+                - name: PGHOST
+                  value: "mushroom-finder-postgres"
+                - name: PGDATABASE
+                  value: "mushroom"
+                - name: PGUSER
+                  value: "mushroom"
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mushroom-finder-db
+                      key: password
+              volumeMounts:
+                - name: worker-code
+                  mountPath: /app
+                  readOnly: true
+                - name: migrations
+                  mountPath: /migrations
+                  readOnly: true
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 768Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: worker-code
+              configMap:
+                name: mushroom-worker
+            - name: migrations
+              configMap:
+                name: mushroom-migrations
+            - name: deps
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mushroom-historical
+  namespace: services
+  labels:
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: worker
+spec:
+  schedule: "0 4 1 * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mushroom-finder
+            app.kubernetes.io/component: worker
+        spec:
+          serviceAccountName: mushroom-finder-worker
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: deps
+              image: docker.io/library/python:3.12-slim
+              command:
+                - /bin/sh
+                - -c
+                - "pip install --no-cache-dir --target=/deps 'psycopg[binary]' requests"
+              volumeMounts:
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          containers:
+            - name: worker
+              image: docker.io/library/python:3.12-slim
+              command: ["python3", "/app/run_refresh.py", "--kind=historical"]
+              env:
+                - name: PYTHONPATH
+                  value: "/deps"
+                - name: PGHOST
+                  value: "mushroom-finder-postgres"
+                - name: PGDATABASE
+                  value: "mushroom"
+                - name: PGUSER
+                  value: "mushroom"
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mushroom-finder-db
+                      key: password
+              volumeMounts:
+                - name: worker-code
+                  mountPath: /app
+                  readOnly: true
+                - name: migrations
+                  mountPath: /migrations
+                  readOnly: true
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  memory: 2Gi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: worker-code
+              configMap:
+                name: mushroom-worker
+            - name: migrations
+              configMap:
+                name: mushroom-migrations
+            - name: deps
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mushroom-maintenance
+  namespace: services
+  labels:
+    app.kubernetes.io/name: mushroom-finder
+    app.kubernetes.io/component: worker
+spec:
+  schedule: "30 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mushroom-finder
+            app.kubernetes.io/component: worker
+        spec:
+          serviceAccountName: mushroom-finder-worker
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: deps
+              image: docker.io/library/python:3.12-slim
+              command:
+                - /bin/sh
+                - -c
+                - "pip install --no-cache-dir --target=/deps 'psycopg[binary]' requests"
+              volumeMounts:
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          containers:
+            - name: worker
+              image: docker.io/library/python:3.12-slim
+              command: ["python3", "/app/run_refresh.py", "--kind=maintenance"]
+              env:
+                - name: PYTHONPATH
+                  value: "/deps"
+                - name: PGHOST
+                  value: "mushroom-finder-postgres"
+                - name: PGDATABASE
+                  value: "mushroom"
+                - name: PGUSER
+                  value: "mushroom"
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mushroom-finder-db
+                      key: password
+              volumeMounts:
+                - name: worker-code
+                  mountPath: /app
+                  readOnly: true
+                - name: migrations
+                  mountPath: /migrations
+                  readOnly: true
+                - name: deps
+                  mountPath: /deps
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: worker-code
+              configMap:
+                name: mushroom-worker
+            - name: migrations
+              configMap:
+                name: mushroom-migrations
+            - name: deps
+              emptyDir: {}

@@ -1,0 +1,84 @@
+# The API trusts X-Auth-Request-* headers from Traefik/oauth2-proxy, so the
+# web pod must only be reachable through Traefik. Workers get internet access
+# only where the data providers and PyPI live.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mushroom-finder-web
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: mushroom-finder
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: network
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostGIS
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Kubernetes API (refresh Job management) + data providers + pip.
+    # The apiserver is reached via its ClusterIP/host endpoint, which no pod
+    # or namespace selector matches, so this is allowed by port.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mushroom-finder-worker
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mushroom-finder
+      app.kubernetes.io/component: worker
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

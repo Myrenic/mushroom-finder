@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./webui.configmap.json
+  - ./api.configmap.json
+  - ./worker.configmap.json
+  - ./migrations.configmap.json
+  - ./nginx.configmap.yaml
+  - ./postgres.yaml
+  - ./deployment.yaml
+  - ./service.yaml
+  - ./rbac.yaml
+  - ./networkpolicy.yaml
+  - ./cronjobs.yaml

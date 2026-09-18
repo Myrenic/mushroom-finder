@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mushroom-finder
+  namespace: services
+  labels:
+    app: mushroom-finder
+spec:
+  selector:
+    app: mushroom-finder
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
