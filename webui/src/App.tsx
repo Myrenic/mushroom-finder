@@ -18,22 +18,26 @@ import {
   analyseArea,
   cancelRun,
   fetchCandidates,
+  fetchExpect,
   fetchFineCells,
   fetchHotspots,
   fetchMe,
   fetchMeta,
+  fetchRecent,
   fetchSpecies,
   startRefresh,
   type Candidate,
+  type ExpectResult,
   type FineCell,
   type Hotspot,
   type Me,
   type Meta,
+  type RecentReport,
   type Species,
 } from "@/lib/api"
 
-type Mode = "history" | "recent" | "fine"
-type SelectedKind = "history" | "recent" | "aoi"
+type Mode = "history" | "precise" | "recent" | "fine"
+type SelectedKind = "history" | "precise" | "recent" | "aoi"
 
 function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">(
@@ -70,6 +74,8 @@ export function App() {
   const [hotspots, setHotspots] = useState<Hotspot[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [fineCells, setFineCells] = useState<FineCell[]>([])
+  const [recentReports, setRecentReports] = useState<RecentReport[]>([])
+  const [expect, setExpect] = useState<ExpectResult | null>(null)
   const [guilds, setGuilds] = useState<Record<string, string>>({})
   const [guild, setGuild] = useState<string>("")
   const [mode, setMode] = useState<Mode>("history")
@@ -77,6 +83,7 @@ export function App() {
   const [showHotspots, setShowHotspots] = useState(true)
   const [showCandidates, setShowCandidates] = useState(true)
   const [showFine, setShowFine] = useState(true)
+  const [showRecent, setShowRecent] = useState(true)
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<{ kind: SelectedKind; id: string } | null>(null)
   const [species, setSpecies] = useState<Species[]>([])
@@ -105,17 +112,20 @@ export function App() {
 
   const loadData = useCallback(async () => {
     try {
-      const [h, c, f] = await Promise.all([
+      const [h, c, f, r] = await Promise.all([
         fetchHotspots(guild || undefined),
         fetchCandidates(guild || undefined),
         // days=0 -> all precise cells; the UI applies the recency filter so
         // switching the window does not need a refetch.
         fetchFineCells(guild || undefined, 0),
+        // Fetch the whole 400-day window once; the UI filters by days_ago.
+        fetchRecent(guild || undefined, 400),
       ])
       setHotspots(h.hotspots)
       setGuilds(h.guilds)
       setCandidates(c.candidates)
       setFineCells(f.cells)
+      setRecentReports(r.reports)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -246,12 +256,34 @@ export function App() {
       .sort((a, b) => (a.days_ago ?? 9999) - (b.days_ago ?? 9999) || b.n - a.n)
   }, [fineCells, recentDays])
 
+  // Individual recent reports (any precision), newest first.
+  const visibleRecent = useMemo(
+    () => recentReports.filter((r) => r.days_ago <= recentDays),
+    [recentReports, recentDays]
+  )
+
+  const showExpectHere = async () => {
+    const b = controls.current?.getBounds()
+    if (!b) return
+    setBusy("expect")
+    setNotice(null)
+    try {
+      setExpect(await fetchExpect((b.south + b.north) / 2, (b.west + b.east) / 2, 5))
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const resultTotal =
     mode === "history"
       ? visibleHotspots.length
-      : mode === "recent"
+      : mode === "precise"
         ? visibleFine.length
-        : candidates.length
+        : mode === "recent"
+          ? visibleRecent.length
+          : candidates.length
   const weather = meta?.weather
   const activeRun = meta?.runs.find(
     (r) => r.status === "running" || r.status === "queued"
@@ -295,18 +327,26 @@ export function App() {
           </Button>
           <Button
             size="sm"
+            variant={mode === "precise" ? "secondary" : "ghost"}
+            onClick={() => setMode("precise")}
+            title="1 km cells built only from records with real coordinates"
+          >
+            Precise
+          </Button>
+          <Button
+            size="sm"
             variant={mode === "recent" ? "secondary" : "ghost"}
             onClick={() => setMode("recent")}
-            title="1 km cells from precise records"
+            title="Individual reports, newest first"
           >
-            Precise (1 km)
+            Recent
           </Button>
           <Button
             size="sm"
             variant={mode === "fine" ? "secondary" : "ghost"}
             onClick={() => setMode("fine")}
           >
-            10 m targets
+            10 m
           </Button>
         </div>
 
@@ -404,9 +444,19 @@ export function App() {
                   className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-2 text-sm"
                 />
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={showExpectHere}
+                disabled={busy === "expect"}
+                title="What is likely fruiting near the map centre in the next days"
+              >
+                {busy === "expect" ? <Loader2 className="animate-spin" /> : <Leaf />}
+                Now here
+              </Button>
               <Button variant="outline" size="sm" onClick={analyse} disabled={busy === "aoi"}>
                 {busy === "aoi" ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                10 m now
+                10 m
               </Button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
@@ -425,6 +475,14 @@ export function App() {
                   onChange={(e) => setShowFine(e.target.checked)}
                 />
                 precise (1 km)
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={showRecent}
+                  onChange={(e) => setShowRecent(e.target.checked)}
+                />
+                recent reports
               </label>
               <label className="flex items-center gap-1.5">
                 <input
@@ -481,7 +539,7 @@ export function App() {
                   </button>
                 ))
               )
-            ) : mode === "recent" ? (
+            ) : mode === "precise" ? (
               visibleFine.length === 0 ? (
                 <Empty
                   text={`No precise reports in the last ${recentDays} days. Precise records come from datasets with real coordinates (mainly iNaturalist); most Dutch records are rounded to 5 km.`}
@@ -490,7 +548,7 @@ export function App() {
                 visibleFine.slice(0, listLimit).map((f) => (
                   <button
                     key={f.cell_id + f.guild}
-                    onClick={() => setSelected({ kind: "recent", id: f.cell_id })}
+                    onClick={() => setSelected({ kind: "precise", id: f.cell_id })}
                     className={`mb-1.5 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted ${
                       selected?.id === f.cell_id ? "bg-muted" : ""
                     }`}
@@ -514,6 +572,38 @@ export function App() {
                       </span>
                     </span>
                   </button>
+                ))
+              )
+            ) : mode === "recent" ? (
+              visibleRecent.length === 0 ? (
+                <Empty
+                  text={`No reports in the last ${recentDays} days for this group. Try a longer window.`}
+                />
+              ) : (
+                visibleRecent.slice(0, listLimit).map((r) => (
+                  <div
+                    key={r.id}
+                    className="mb-1.5 flex items-center gap-2 rounded-lg px-2 py-2"
+                  >
+                    <span
+                      className={`grid size-9 shrink-0 place-items-center rounded-lg text-[10px] font-semibold ${
+                        r.days_ago <= 30
+                          ? "bg-accent/60 text-accent-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {r.days_ago}d
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {r.name_nl ?? r.scientific_name}
+                      </span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {r.guild_label} · {r.observed_on} ·{" "}
+                        {r.precise ? "1 km precise" : "5 km area"}
+                      </span>
+                    </span>
+                  </div>
                 ))
               )
             ) : candidates.length === 0 ? (
@@ -561,9 +651,11 @@ export function App() {
             hotspots={showHotspots ? visibleHotspots : []}
             candidates={showCandidates ? candidates : []}
             fineCells={showFine ? visibleFine : []}
+            recentReports={showRecent ? visibleRecent : []}
             showHotspots={showHotspots}
             showCandidates={showCandidates}
             showFine={showFine}
+            showRecent={showRecent}
             selectedId={selected?.id ?? null}
             onSelect={onSelect}
             controls={controls}
@@ -581,13 +673,65 @@ export function App() {
               <p className="mt-0.5 text-muted-foreground">
                 {mode === "history"
                   ? "5 x 5 km zones where a group is repeatedly recorded. Broad, not exact."
-                  : mode === "recent"
+                  : mode === "precise"
                     ? "1 km cells from records that carry real coordinates (mainly recent iNaturalist). Amber = reported in the last 30 days."
-                    : "Experimental habitat clues inside a selected area. Search targets, never mushroom locations."}
+                    : mode === "recent"
+                      ? "Individual reports. Solid = 1 km precise, dashed = 5 km area (generalised). Amber = within 30 days."
+                      : "Experimental habitat clues inside a selected area. Search targets, never mushroom locations."}
               </p>
             </div>
           </div>
 
+          {expect && (
+            <Card className="absolute bottom-2 left-2 z-[500] max-h-[65%] w-[min(430px,calc(100%-1rem))] overflow-y-auto bg-card/95 backdrop-blur">
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <CardTitle>Likely here now</CardTitle>
+                    <p className="text-[11px] text-muted-foreground">
+                      week {expect.week} · within {expect.radius_km} km · conditions{" "}
+                      {expect.condition.toFixed(2)}
+                    </p>
+                  </div>
+                  <Button size="icon" variant="ghost" onClick={() => setExpect(null)}>
+                    ×
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                {expect.species.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    No curated species recorded near here yet.
+                  </p>
+                ) : (
+                  expect.species.slice(0, 18).map((s) => (
+                    <div key={s.species_id} className="flex items-start gap-2">
+                      <span
+                        className={`grid size-8 shrink-0 place-items-center rounded-lg text-[10px] font-semibold ${scoreBadge(s.expected)}`}
+                        title={`expected ${s.expected}`}
+                      >
+                        {Math.round(s.expected * 100)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {s.name_nl ?? s.scientific_name}
+                        </span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {s.reasons.join(" · ")}
+                        </span>
+                      </span>
+                    </div>
+                  ))
+                )}
+                <p className="text-muted-foreground">
+                  Seasonality from national records, local sightings within{" "}
+                  {expect.radius_km} km, and current weather. The number is a
+                  relative rank for "look for this now", not a probability and
+                  not a guarantee.
+                </p>
+              </CardContent>
+            </Card>
+          )}
           {(selectedHotspot || selectedCandidate || selectedFine) && (
             <Card className="absolute right-2 bottom-2 z-[500] max-h-[60%] w-[min(380px,calc(100%-1rem))] overflow-y-auto bg-card/95 backdrop-blur">
               <CardHeader className="pb-2">

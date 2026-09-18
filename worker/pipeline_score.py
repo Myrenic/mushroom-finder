@@ -22,6 +22,7 @@ def rebuild_fine_cells(conn) -> int:
     with conn.cursor() as cur:
         cur.execute(grid.SQL_BACKFILL_PRECISION, {"inat": INATURALIST_DATASET})
         cur.execute(grid.SQL_REBUILD_FINE_CELLS)
+        cur.execute(grid.SQL_REBUILD_RECENT_REPORTS)
         cur.execute("SELECT count(*) AS n FROM fine_cells")
         count = cur.fetchone()["n"]
     conn.commit()

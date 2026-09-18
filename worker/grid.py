@@ -123,6 +123,47 @@ SELECT 'r' || ix || '_' || iy,
 FROM agg;
 """
 
+# Rebuild recent reports from every usable record in the last ~13 months.
+# Coarse records are snapped to their 5 km cell centre, precise ones to 1 km.
+SQL_REBUILD_RECENT_REPORTS = """
+DELETE FROM recent_reports;
+INSERT INTO recent_reports (id, guild, species_id, name_nl, scientific_name,
+                            observed_on, resolution_m, precise, lat, lon)
+SELECT DISTINCT ON (x.species_id, x.observed_on, x.res, x.lat, x.lon)
+       md5(x.species_id || '|' || x.observed_on || '|' || x.res || '|' ||
+           x.lat || '|' || x.lon),
+       x.guild, x.species_id, x.name_nl, x.scientific_name, x.observed_on,
+       x.res, x.precise, x.lat, x.lon
+FROM (
+    SELECT s.id AS species_id, s.name_nl, s.scientific_name, s.guild,
+           o.observed_on, false AS precise, 5000 AS res,
+           gc.center_lat AS lat, gc.center_lon AS lon
+    FROM occurrences o
+    JOIN species s ON s.id = o.species_id
+    JOIN grid_cells gc ON gc.cell_id = o.cell_id
+    WHERE NOT o.precise AND s.enabled AND NOT s.sensitive
+      AND o.observed_on >= current_date - 400
+    UNION ALL
+    SELECT s.id, s.name_nl, s.scientific_name, s.guild, o.observed_on,
+           true, 1000,
+           ST_Y(ST_Transform(ST_Centroid(e.env), 4326)),
+           ST_X(ST_Transform(ST_Centroid(e.env), 4326))
+    FROM occurrences o
+    JOIN species s ON s.id = o.species_id
+    CROSS JOIN LATERAL (
+        SELECT ST_MakeEnvelope(
+                   floor(ST_X(ST_Transform(o.geom, 28992)) / 1000) * 1000,
+                   floor(ST_Y(ST_Transform(o.geom, 28992)) / 1000) * 1000,
+                   floor(ST_X(ST_Transform(o.geom, 28992)) / 1000) * 1000 + 1000,
+                   floor(ST_Y(ST_Transform(o.geom, 28992)) / 1000) * 1000 + 1000,
+                   28992) AS env
+    ) e
+    WHERE o.precise AND s.enabled AND NOT s.sensitive
+      AND o.observed_on >= current_date - 400
+) x
+WHERE x.lat IS NOT NULL AND x.lon IS NOT NULL;
+"""
+
 # Per (cell, guild): records, richness, recurrence proxy, last seen.
 SQL_CELL_GUILD_AGG = """
 WITH taxon_guild AS (

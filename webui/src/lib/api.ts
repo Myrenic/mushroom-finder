@@ -50,6 +50,48 @@ export interface FineCell {
   resolution_m: number
 }
 
+export interface RecentReport {
+  id: string
+  guild: string
+  guild_label: string
+  name_nl: string | null
+  scientific_name: string
+  observed_on: string
+  days_ago: number
+  resolution_m: number
+  precise: boolean
+  lat: number
+  lon: number
+}
+
+export interface ExpectSpecies {
+  species_id: string
+  name_nl: string | null
+  scientific_name: string
+  guild: string
+  guild_label: string
+  photo_value: number
+  local_records: number
+  last_seen: string | null
+  days_ago: number | null
+  seasonal: number
+  peak_week: number
+  expected: number
+  confidence: number
+  phase: string
+  reasons: string[]
+}
+
+export interface ExpectResult {
+  lat: number
+  lon: number
+  radius_km: number
+  week: number
+  month: number
+  condition: number
+  species: ExpectSpecies[]
+}
+
 export interface Species {
   name_nl: string | null
   scientific_name: string
@@ -143,6 +185,14 @@ export const fetchFineCells = (guild?: string, days = 0) =>
     `/fine-cells?limit=2000${guild ? `&guild=${encodeURIComponent(guild)}` : ""}${
       days ? `&days=${days}` : ""
     }`
+  )
+export const fetchRecent = (guild?: string, days = 90) =>
+  api<{ reports: RecentReport[] }>(
+    `/recent?limit=1500&days=${days}${guild ? `&guild=${encodeURIComponent(guild)}` : ""}`
+  )
+export const fetchExpect = (lat: number, lon: number, radiusKm = 5) =>
+  api<ExpectResult>(
+    `/expect?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`
   )
 export const fetchCandidates = (guild?: string, limit = 400) =>
   api<{ candidates: Candidate[] }>(

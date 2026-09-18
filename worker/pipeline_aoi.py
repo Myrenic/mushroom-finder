@@ -24,7 +24,10 @@ AHN_WCS = "https://service.pdok.nl/rws/ahn/wcs/v1_0"
 
 # Keep an AOI small enough that a single job is seconds, not minutes.
 MAX_AOI_SIDE_M = 2000
-MAX_CANDIDATES = 120
+# A walkable shortlist, not a swarm of dots: keep the best cells that are at
+# least MIN_SPACING_M apart so each one is a distinct place to inspect.
+MAX_CANDIDATES = 24
+MIN_SPACING_M = 150.0
 
 
 def _wcs_tiff(coverage: str, xmin: float, ymin: float, xmax: float, ymax: float) -> bytes:
@@ -187,10 +190,24 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None,
         return {"candidates": 0, "note": "no structured 10 m cells in AOI"}
 
     candidates.sort(key=lambda c: c["fsp"], reverse=True)
-    top = candidates[:MAX_CANDIDATES]
     n = len(candidates)
-    for rank, c in enumerate(top):
-        c["percentile"] = 1.0 - (rank / max(1, n))
+    for rank, c in enumerate(candidates):
+        c["rank"] = rank
+
+    top: list[dict] = []
+    for c in candidates:
+        if all(
+            (c["x_rd"] - t["x_rd"]) ** 2 + (c["y_rd"] - t["y_rd"]) ** 2
+            >= MIN_SPACING_M ** 2
+            for t in top
+        ):
+            top.append(c)
+            if len(top) >= MAX_CANDIDATES:
+                break
+    # Percentile reflects standing among all scanned cells, not just the ones
+    # kept after spacing.
+    for c in top:
+        c["percentile"] = 1.0 - (c["rank"] / max(1, n))
 
     # Replace this AOI's previous candidates only (other AOIs stay intact).
     import json

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import ssl
 import sys
@@ -285,6 +286,172 @@ def candidates(conn, guild: str | None, limit: int) -> list[dict]:
     return out
 
 
+SQL_EXPECT = """
+WITH me AS (
+    SELECT ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography AS g
+),
+local AS (
+    SELECT s.id, s.name_nl, s.scientific_name, s.guild, s.photo_value,
+           count(*) AS n, max(o.observed_on) AS last_seen
+    FROM occurrences o
+    JOIN species s ON s.id = o.species_id
+    CROSS JOIN me
+    WHERE s.enabled AND NOT s.sensitive AND o.geom IS NOT NULL
+      AND ST_DWithin(o.geom::geography, me.g, %(radius_m)s)
+    GROUP BY 1, 2, 3, 4, 5
+),
+weeks AS (
+    SELECT s.id AS sid, date_part('week', o.observed_on)::int AS wk, count(*) AS c
+    FROM occurrences o
+    JOIN species s ON s.id = o.species_id
+    WHERE s.enabled AND NOT s.sensitive AND o.observed_on IS NOT NULL
+    GROUP BY 1, 2
+),
+prof AS (
+    SELECT sid, array_agg(wk ORDER BY wk) AS wks, array_agg(c ORDER BY wk) AS cnts
+    FROM weeks GROUP BY sid
+)
+SELECT l.id, l.name_nl, l.scientific_name, l.guild, l.photo_value,
+       l.n, l.last_seen, p.wks, p.cnts
+FROM local l
+LEFT JOIN prof p ON p.sid = l.id
+ORDER BY l.n DESC
+LIMIT 60
+"""
+
+
+def _weekly_profile(wks, cnts) -> list[float]:
+    """53-slot week-of-year count array (index 0 = ISO week 1)."""
+    arr = [0.0] * 53
+    for w, c in zip(wks or [], cnts or []):
+        if w and 1 <= int(w) <= 53:
+            arr[int(w) - 1] += float(c)
+    return arr
+
+
+def _window(arr: list[float], week: int) -> float:
+    """Counts in a 3-week window centred on `week`, wrapping the year."""
+    i = week - 1
+    return arr[(i - 1) % 53] + arr[i % 53] + arr[(i + 1) % 53]
+
+
+def expect_here(conn, lat: float, lon: float, radius_m: int, condition: float) -> dict:
+    """Rank the species known in this area by how likely they are right now.
+
+    Combines local records, the species' own national phenology (how close
+    today is to its peak), and the current weather. It answers "what should I
+    look for here today", which the hotspot score alone never did.
+    """
+    with conn.cursor() as cur:
+        cur.execute(SQL_EXPECT, {"lat": lat, "lon": lon, "radius_m": radius_m})
+        rows = cur.fetchall()
+
+    week = dt.date.today().isocalendar()[1]
+    month = dt.date.today().month
+    out = []
+    for row in rows:
+        arr = _weekly_profile(row["wks"], row["cnts"])
+        if not any(arr):
+            continue
+        peak = max(_window(arr, w) for w in range(1, 54))
+        if peak <= 0:
+            continue
+        current = _window(arr, week)
+        seasonal = current / peak
+        confidence = min(1.0, math.log1p(row["n"]) / math.log1p(50.0))
+        expected = seasonal * (0.5 + 0.5 * condition) * (0.4 + 0.6 * confidence)
+        if seasonal >= 0.7:
+            phase = "at peak"
+        elif seasonal >= 0.35:
+            phase = "in season"
+        elif seasonal >= 0.10:
+            phase = "starting / ending"
+        else:
+            phase = "out of season"
+        last_seen = row["last_seen"]
+        days_ago = (dt.date.today() - last_seen).days if last_seen else None
+        reasons = [
+            "{} ({}% of its peak week)".format(phase, round(seasonal * 100)),
+            "{} records within {} km".format(row["n"], radius_m // 1000),
+        ]
+        if days_ago is not None:
+            reasons.append(
+                "last reported here {}".format(
+                    "today" if days_ago <= 1 else "{} days ago".format(days_ago)
+                )
+            )
+        reasons.append(
+            "good current conditions" if condition >= 0.6 else "conditions are marginal"
+        )
+        out.append({
+            "species_id": row["id"],
+            "name_nl": row["name_nl"],
+            "scientific_name": row["scientific_name"],
+            "guild": row["guild"],
+            "guild_label": GUILDS.get(row["guild"], row["guild"]),
+            "photo_value": row["photo_value"],
+            "local_records": row["n"],
+            "last_seen": last_seen.isoformat() if last_seen else None,
+            "days_ago": days_ago,
+            "seasonal": round(seasonal, 3),
+            "peak_week": max(range(1, 54), key=lambda w: _window(arr, w)),
+            "expected": round(expected, 3),
+            "confidence": round(confidence, 2),
+            "phase": phase,
+            "reasons": reasons,
+        })
+    out.sort(key=lambda r: r["expected"], reverse=True)
+    return {
+        "lat": lat,
+        "lon": lon,
+        "radius_km": radius_m // 1000,
+        "week": week,
+        "month": month,
+        "condition": round(condition, 3),
+        "species": out,
+    }
+
+
+def recent_reports(conn, guild: str | None, days: int, limit: int) -> list[dict]:
+    """Recent observations at the precision each record actually supports."""
+    where = []
+    params: list = []
+    if guild:
+        where.append("guild = %s")
+        params.append(guild)
+    if days > 0:
+        where.append("observed_on >= current_date - %s")
+        params.append(days)
+    params.append(limit)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, guild, name_nl, scientific_name, observed_on,
+                   resolution_m, precise, lat, lon
+            FROM recent_reports
+            {clause}
+            ORDER BY observed_on DESC, name_nl
+            LIMIT %s
+            """.format(clause=clause),
+            params,
+        )
+        rows = cur.fetchall()
+    return [{
+        "id": r["id"],
+        "guild": r["guild"],
+        "guild_label": GUILDS.get(r["guild"], r["guild"]),
+        "name_nl": r["name_nl"],
+        "scientific_name": r["scientific_name"],
+        "observed_on": r["observed_on"].isoformat(),
+        "days_ago": (dt.date.today() - r["observed_on"]).days,
+        "resolution_m": r["resolution_m"],
+        "precise": r["precise"],
+        "lat": r["lat"],
+        "lon": r["lon"],
+    } for r in rows]
+
+
 def fine_cells(conn, guild: str | None, days: int, limit: int) -> list[dict]:
     """1 km cells built from precise records only.
 
@@ -433,6 +600,22 @@ class Handler(BaseHTTPRequestHandler):
                     days = max(0, min(3650, int((query.get("days") or ["0"])[0])))
                     limit = min(5000, int((query.get("limit") or ["2000"])[0]))
                     return self._send(200, {"cells": fine_cells(conn, guild, days, limit)})
+                if path == "/api/recent":
+                    guild = (query.get("guild") or [None])[0]
+                    days = max(1, min(400, int((query.get("days") or ["90"])[0])))
+                    limit = min(5000, int((query.get("limit") or ["1500"])[0]))
+                    return self._send(200, {"reports": recent_reports(conn, guild, days, limit)})
+                if path == "/api/expect":
+                    try:
+                        lat = float((query.get("lat") or [""])[0])
+                        lon = float((query.get("lon") or [""])[0])
+                    except ValueError:
+                        return self._send(400, {"error": "lat and lon are required"})
+                    if not (50.0 <= lat <= 54.0 and 3.0 <= lon <= 7.5):
+                        return self._send(400, {"error": "point is outside the Netherlands"})
+                    radius_km = min(25, max(1, int((query.get("radius_km") or ["5"])[0])))
+                    cond = latest_condition(conn)["condition"]
+                    return self._send(200, expect_here(conn, lat, lon, radius_km * 1000, cond))
                 if path == "/api/refresh":
                     with conn.cursor() as cur:
                         cur.execute(

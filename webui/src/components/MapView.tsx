@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import L from "leaflet"
 
-import type { Candidate, FineCell, Hotspot } from "@/lib/api"
+import type { Candidate, FineCell, Hotspot, RecentReport } from "@/lib/api"
 
 export interface MapControls {
   getBounds: () => { south: number; west: number; north: number; east: number } | null
@@ -11,9 +11,11 @@ interface Props {
   hotspots: Hotspot[]
   candidates: Candidate[]
   fineCells: FineCell[]
+  recentReports: RecentReport[]
   showHotspots: boolean
   showCandidates: boolean
   showFine: boolean
+  showRecent: boolean
   selectedId: string | null
   onSelect: (kind: "hotspot" | "candidate" | "fine", id: string) => void
   controls: React.MutableRefObject<MapControls | null>
@@ -31,9 +33,11 @@ export function MapView({
   hotspots,
   candidates,
   fineCells,
+  recentReports,
   showHotspots,
   showCandidates,
   showFine,
+  showRecent,
   selectedId,
   onSelect,
   controls,
@@ -127,6 +131,26 @@ export function MapView({
       }
     }
 
+    if (showRecent) {
+      for (const r of recentReports) {
+        const fresh = r.days_ago <= 30
+        const marker = L.circleMarker([r.lat, r.lon], {
+          radius: r.precise ? 5 : 7,
+          color: fresh ? "#b45309" : "#78716c",
+          weight: fresh ? 2 : 1,
+          fillColor: fresh ? "#f59e0b" : "#a8a29e",
+          fillOpacity: fresh ? 0.9 : 0.5,
+          dashArray: r.precise ? undefined : "2,2",
+        })
+        marker.bindTooltip(
+          `${r.name_nl ?? r.scientific_name}<br/>${r.observed_on} · ${r.days_ago} days ago` +
+            `<br/>${r.precise ? "1 km precise" : "5 km area (generalised)"}`,
+          { direction: "top" }
+        )
+        group.addLayer(marker)
+      }
+    }
+
     if (showCandidates) {
       for (const c of candidates) {
         const marker = L.circleMarker([c.lat, c.lon], {
@@ -144,7 +168,17 @@ export function MapView({
         group.addLayer(marker)
       }
     }
-  }, [hotspots, candidates, fineCells, showHotspots, showCandidates, showFine, selectedId])
+  }, [
+    hotspots,
+    candidates,
+    fineCells,
+    recentReports,
+    showHotspots,
+    showCandidates,
+    showFine,
+    showRecent,
+    selectedId,
+  ])
 
   return <div ref={containerRef} className="h-full w-full" />
 }
