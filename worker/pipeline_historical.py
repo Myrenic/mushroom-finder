@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from config import ATTRIBUTIONS, TAXA
@@ -35,7 +36,7 @@ GBIF_DATASET = {
     "version": "live",
 }
 
-MAX_ENRICH_CELLS = int(os.environ.get("MAX_ENRICH_CELLS", "200"))
+MAX_ENRICH_CELLS = int(os.environ.get("MAX_ENRICH_CELLS", "600"))
 
 
 def _insert_occurrences(conn, rows: list[dict]) -> int:
@@ -149,30 +150,35 @@ def run(conn, run_id: str, progress: Progress, requested_by: str | None = None) 
         )
         cells = cur.fetchall()
 
-    enriched_ok = 0
-    for i, cell in enumerate(cells):
-        ctx = sources_environment.enrich_cell(
+    def enrich_one(cell):
+        return cell["cell_id"], sources_environment.enrich_cell(
             cell["min_lat"], cell["min_lon"], cell["max_lat"], cell["max_lon"])
-        if ctx:
-            db.upsert_cell_environment(conn, cell["cell_id"], {
-                "forest_fraction": ctx.get("forest"),
-                "broadleaf_fraction": None,
-                "conifer_fraction": None,
-                "heath_fraction": ctx.get("heath"),
-                "wet_nature_fraction": ctx.get("wet_nature"),
-                "tree_cover": ctx.get("tree_cover"),
-                "canopy_height": ctx.get("canopy_height"),
-                "microrelief": ctx.get("microrelief"),
-                "groundwater_depth_cm": ctx.get("groundwater_depth_cm"),
-                "soil_type": ctx.get("soil_type"),
-                "soil_lime": ctx.get("soil_lime"),
-                "protected": ctx.get("protected"),
-                "path_density": ctx.get("path_density"),
-            })
-            enriched_ok += 1
-        if cells:
-            progress(0.75 + 0.15 * (i + 1) / len(cells), "environment",
-                     "enriched {}/{} cells".format(i + 1, len(cells)))
+
+    enriched_ok = 0
+    # Two concurrent Overpass calls keep the run bounded without hammering a
+    # shared community service. DB writes stay single-threaded.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for i, (cell_id, ctx) in enumerate(pool.map(enrich_one, cells)):
+            if ctx:
+                db.upsert_cell_environment(conn, cell_id, {
+                    "forest_fraction": ctx.get("forest"),
+                    "broadleaf_fraction": None,
+                    "conifer_fraction": None,
+                    "heath_fraction": ctx.get("heath"),
+                    "wet_nature_fraction": ctx.get("wet_nature"),
+                    "tree_cover": ctx.get("tree_cover"),
+                    "canopy_height": ctx.get("canopy_height"),
+                    "microrelief": ctx.get("microrelief"),
+                    "groundwater_depth_cm": ctx.get("groundwater_depth_cm"),
+                    "soil_type": ctx.get("soil_type"),
+                    "soil_lime": ctx.get("soil_lime"),
+                    "protected": ctx.get("protected"),
+                    "path_density": ctx.get("path_density"),
+                })
+                enriched_ok += 1
+            if cells:
+                progress(0.75 + 0.15 * (i + 1) / len(cells), "environment",
+                         "enriched {}/{} cells".format(i + 1, len(cells)))
     conn.commit()
 
     progress(0.92, "scoring", "recomputing cell scores")

@@ -86,11 +86,20 @@ def richness_component(richness: int, saturation: int = 12) -> float:
 def habitat_component(env: dict, guild: str) -> float:
     """Habitat suitability 0..1 per guild from PDOK land cover / terrain."""
     forest = env.get("forest_fraction") or 0.0
-    broadleaf = env.get("broadleaf_fraction") or 0.0
-    conifer = env.get("conifer_fraction") or 0.0
     heath = env.get("heath_fraction") or 0.0
     wet = env.get("wet_nature_fraction") or 0.0
     tree_cover = env.get("tree_cover") or 0.0
+
+    # There is no open national tree-species layer. When the host split is
+    # unknown, use forest presence itself: we know a stand exists, not what
+    # is in it. This is a deliberate, documented approximation.
+    broadleaf = env.get("broadleaf_fraction")
+    conifer = env.get("conifer_fraction")
+    if broadleaf is None and conifer is None:
+        broadleaf = conifer = forest
+    else:
+        broadleaf = broadleaf or 0.0
+        conifer = conifer or 0.0
 
     if guild == "wood":
         return _clamp(0.55 * forest + 0.30 * tree_cover + 0.15 * min(1.0, broadleaf / 0.5))

@@ -16,6 +16,7 @@ counted (documented limitation).
 from __future__ import annotations
 
 import math
+import time
 from typing import Callable
 
 import requests
@@ -68,48 +69,84 @@ def _line_length_m(coords: list[tuple[float, float]], lat0: float) -> float:
     return total
 
 
+def _classify(tags: dict) -> str | None:
+    if tags.get("highway"):
+        return "path"
+    if tags.get("natural") == "wood" or tags.get("landuse") == "forest":
+        return "forest"
+    if tags.get("natural") in ("heath", "scrub"):
+        return "heath"
+    if tags.get("natural") in ("wetland", "marsh"):
+        return "wet_nature"
+    return None
+
+
 def overpass_context(min_lat: float, min_lon: float, max_lat: float,
-                     max_lon: float, guild_hints: set[str] | None = None) -> dict:
-    """Return habitat fractions (0..1) and path density (m per km2)."""
+                     max_lon: float) -> dict:
+    """Return habitat fractions (0..1) and path density (m per km2).
+
+    Both ways and multipolygon relations are counted: Dutch forests are
+    frequently mapped as relations, so a ways-only query badly undercounts
+    woodland.
+    """
     bbox = "{},{},{},{}".format(min_lat, min_lon, max_lat, max_lon)
     lat0 = (min_lat + max_lat) / 2.0
     box_area = max(1.0, _polygon_area_m2(
         [(min_lat, min_lon), (min_lat, max_lon), (max_lat, max_lon), (max_lat, min_lon)], lat0))
 
     parts = []
-    for name, tags in HABITAT_TAGS.items():
+    for _name, tags in HABITAT_TAGS.items():
         for tag in tags:
             parts.append('way{}({})'.format(tag, bbox))
+            parts.append('relation{}({})'.format(tag, bbox))
     parts.append('way{}({})'.format(PATH_FILTER, bbox))
-    query = "[out:json][timeout:60];({});out geom;".format(";".join(parts))
+    # Every statement inside the union must be terminated, including the last.
+    query = "[out:json][timeout:60];({};);out geom;".format(";".join(parts))
 
-    try:
-        r = requests.post(
-            OVERPASS,
-            data={"data": query},
-            headers={"User-Agent": USER_AGENT},
-            timeout=HTTP_TIMEOUT_S + 30,
-        )
-        r.raise_for_status()
-        elements = r.json().get("elements", [])
-    except (requests.RequestException, ValueError):
-        return {}
+    # Overpass is a shared, best-effort service and intermittently 429s or
+    # times out. Retry with backoff rather than recording an empty habitat.
+    elements = []
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                OVERPASS,
+                data={"data": query},
+                headers={"User-Agent": USER_AGENT},
+                timeout=HTTP_TIMEOUT_S + 30,
+            )
+            if r.status_code in (429, 502, 503, 504):
+                raise requests.HTTPError("overpass status {}".format(r.status_code))
+            r.raise_for_status()
+            elements = r.json().get("elements", [])
+            break
+        except (requests.RequestException, ValueError):
+            if attempt == 2:
+                return {}
+            time.sleep(2.0 * (attempt + 1))
 
     areas = {"forest": 0.0, "heath": 0.0, "wet_nature": 0.0}
     path_len = 0.0
     for el in elements:
-        geom = el.get("geometry") or []
-        coords = [(p["lat"], p["lon"]) for p in geom if "lat" in p and "lon" in p]
-        tags = el.get("tags", {}) or {}
-        if tags.get("highway"):
-            path_len += _line_length_m(coords, lat0)
+        kind = _classify(el.get("tags", {}) or {})
+        if not kind:
             continue
-        if tags.get("natural") == "wood" or tags.get("landuse") == "forest":
-            areas["forest"] += _polygon_area_m2(coords, lat0)
-        elif tags.get("natural") in ("heath", "scrub"):
-            areas["heath"] += _polygon_area_m2(coords, lat0)
-        elif tags.get("natural") in ("wetland", "marsh"):
-            areas["wet_nature"] += _polygon_area_m2(coords, lat0)
+        if el.get("type") == "relation":
+            rings = [
+                [(p["lat"], p["lon"]) for p in (m.get("geometry") or [])
+                 if "lat" in p and "lon" in p]
+                for m in (el.get("members") or [])
+                if m.get("role") in ("", "outer") and m.get("geometry")
+            ]
+        else:
+            geom = el.get("geometry") or []
+            rings = [[(p["lat"], p["lon"]) for p in geom if "lat" in p and "lon" in p]]
+
+        if kind == "path":
+            for ring in rings:
+                path_len += _line_length_m(ring, lat0)
+            continue
+        for ring in rings:
+            areas[kind] += _polygon_area_m2(ring, lat0)
 
     out = {key: min(1.0, val / box_area) for key, val in areas.items()}
     out["path_density"] = path_len / (box_area / 1_000_000.0)  # m per km2
