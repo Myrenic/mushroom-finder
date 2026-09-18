@@ -19,10 +19,10 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        entryFileNames: "index.js",
-        assetFileNames: "index.css",
-        // Keep the SPA small; it is shipped as a ConfigMap.
-        manualChunks: undefined,
+        // Content-hashed names so a ConfigMap update cannot leave a browser
+        // running a stale bundle from cache.
+        entryFileNames: "index.[hash].js",
+        assetFileNames: "index.[hash].css",
       },
     },
   },
