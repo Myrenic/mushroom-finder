@@ -32,48 +32,48 @@
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* Forest-floor palette: mossy greens, bark browns, amber spore prints. */
+/* Herfst: eikenblad, beukennoot, russula-rood en dennengroen. */
 :root {
-  --background: oklch(0.97 0.012 130);
-  --foreground: oklch(0.24 0.03 130);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.24 0.03 130);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.24 0.03 130);
-  --primary: oklch(0.45 0.11 150);
-  --primary-foreground: oklch(0.98 0.01 130);
-  --secondary: oklch(0.93 0.02 120);
-  --secondary-foreground: oklch(0.32 0.04 130);
-  --muted: oklch(0.94 0.015 120);
-  --muted-foreground: oklch(0.5 0.03 130);
-  --accent: oklch(0.85 0.06 80);
-  --accent-foreground: oklch(0.3 0.05 70);
-  --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.9 0.02 130);
-  --input: oklch(0.9 0.02 130);
-  --ring: oklch(0.45 0.11 150);
+  --background: oklch(0.972 0.014 78);
+  --foreground: oklch(0.28 0.035 55);
+  --card: oklch(0.995 0.008 85);
+  --card-foreground: oklch(0.28 0.035 55);
+  --popover: oklch(0.995 0.008 85);
+  --popover-foreground: oklch(0.28 0.035 55);
+  --primary: oklch(0.53 0.13 52);
+  --primary-foreground: oklch(0.985 0.012 85);
+  --secondary: oklch(0.93 0.028 75);
+  --secondary-foreground: oklch(0.33 0.045 55);
+  --muted: oklch(0.945 0.02 78);
+  --muted-foreground: oklch(0.50 0.04 58);
+  --accent: oklch(0.84 0.085 78);
+  --accent-foreground: oklch(0.33 0.05 55);
+  --destructive: oklch(0.55 0.19 28);
+  --border: oklch(0.90 0.025 75);
+  --input: oklch(0.90 0.025 75);
+  --ring: oklch(0.53 0.13 52);
   --radius: 0.625rem;
 }
 
 .dark {
-  --background: oklch(0.18 0.02 140);
-  --foreground: oklch(0.95 0.01 130);
-  --card: oklch(0.22 0.022 140);
-  --card-foreground: oklch(0.95 0.01 130);
-  --popover: oklch(0.23 0.022 140);
-  --popover-foreground: oklch(0.95 0.01 130);
-  --primary: oklch(0.66 0.12 150);
-  --primary-foreground: oklch(0.17 0.03 150);
-  --secondary: oklch(0.28 0.025 140);
-  --secondary-foreground: oklch(0.95 0.01 130);
-  --muted: oklch(0.27 0.02 140);
-  --muted-foreground: oklch(0.7 0.02 130);
-  --accent: oklch(0.35 0.05 80);
-  --accent-foreground: oklch(0.95 0.02 90);
-  --destructive: oklch(0.68 0.18 25);
+  --background: oklch(0.185 0.018 55);
+  --foreground: oklch(0.945 0.015 80);
+  --card: oklch(0.225 0.022 55);
+  --card-foreground: oklch(0.945 0.015 80);
+  --popover: oklch(0.235 0.022 55);
+  --popover-foreground: oklch(0.945 0.015 80);
+  --primary: oklch(0.72 0.135 62);
+  --primary-foreground: oklch(0.20 0.03 50);
+  --secondary: oklch(0.28 0.025 55);
+  --secondary-foreground: oklch(0.945 0.015 80);
+  --muted: oklch(0.27 0.022 55);
+  --muted-foreground: oklch(0.715 0.03 75);
+  --accent: oklch(0.38 0.055 60);
+  --accent-foreground: oklch(0.95 0.02 80);
+  --destructive: oklch(0.68 0.17 28);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.66 0.12 150);
+  --ring: oklch(0.72 0.135 62);
 }
 
 @layer base {
@@ -105,38 +105,15 @@
   color: var(--muted-foreground);
   font-size: 10px;
 }
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-}
-.dot-ok {
-  background: oklch(0.72 0.17 155);
-  box-shadow: 0 0 0 3px oklch(0.72 0.17 155 / 20%);
-}
-.dot-busy {
-  background: oklch(0.8 0.13 85);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-.dot-bad {
-  background: oklch(0.6 0.19 25);
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
+
+/* Warme gloed achter de startpagina. */
 .hero {
   background:
-    radial-gradient(600px 220px at 12% -10%, oklch(0.66 0.12 150 / 0.18), transparent 70%),
-    radial-gradient(520px 200px at 88% -10%, oklch(0.85 0.08 80 / 0.14), transparent 70%);
+    radial-gradient(620px 230px at 12% -10%, oklch(0.72 0.13 62 / 0.20), transparent 70%),
+    radial-gradient(520px 200px at 88% -10%, oklch(0.60 0.14 35 / 0.16), transparent 70%);
 }
 .dark .hero {
   background:
-    radial-gradient(600px 220px at 12% -10%, oklch(0.66 0.12 150 / 0.26), transparent 70%),
-    radial-gradient(520px 200px at 88% -10%, oklch(0.85 0.08 80 / 0.16), transparent 70%);
+    radial-gradient(620px 230px at 12% -10%, oklch(0.72 0.13 62 / 0.22), transparent 70%),
+    radial-gradient(520px 200px at 88% -10%, oklch(0.60 0.14 35 / 0.20), transparent 70%);
 }

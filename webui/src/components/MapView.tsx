@@ -59,19 +59,19 @@ export function MapView({ center, radiusKm, reports }: Props) {
     if (center) {
       L.circle([center.lat, center.lon], {
         radius: radiusKm * 1000,
-        color: "#15803d",
+        color: "#b45309",
         weight: 1,
-        fillColor: "#22c55e",
+        fillColor: "#f59e0b",
         fillOpacity: 0.08,
       }).addTo(group)
       L.circleMarker([center.lat, center.lon], {
         radius: 6,
-        color: "#14532d",
+        color: "#7c2d12",
         weight: 2,
-        fillColor: "#16a34a",
+        fillColor: "#c2410c",
         fillOpacity: 1,
       })
-        .bindTooltip("Searched place — records are searched in the circle")
+        .bindTooltip("Gezochte plek, waarnemingen binnen de cirkel")
         .addTo(group)
     }
 
@@ -86,8 +86,8 @@ export function MapView({ center, radiusKm, reports }: Props) {
         dashArray: r.precise ? undefined : "2,2",
       })
         .bindTooltip(
-          `${r.name_nl ?? r.scientific_name}<br/>${r.observed_on} · ${r.days_ago} days ago` +
-            `<br/>${r.precise ? "1 km precise" : "5 km area (generalised)"}`
+          `${r.name_nl ?? r.scientific_name}<br/>${r.observed_on} · ${r.days_ago} dagen geleden` +
+            `<br/>${r.precise ? "1 km nauwkeurig" : "5 km vak (gegeneraliseerd)"}`
         )
         .addTo(group)
     }

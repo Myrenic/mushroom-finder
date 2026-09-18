@@ -23,11 +23,11 @@ FINE_CELL_SIZE_M = 10
 # Each guild groups taxa with similar habitat drivers so a single score is
 # ecologically meaningful.
 GUILDS = {
-    "wood": "Wood-decaying fungi",
-    "mycorrhizal": "Ectomycorrhizal fungi",
-    "litter": "Litter / humus fungi",
-    "wet": "Wet-ground fungi",
-    "grassland": "Grassland fungi",
+    "wood": "Houtzwammen",
+    "mycorrhizal": "Mycorrhizapaddenstoelen",
+    "litter": "Strooiselzwammen",
+    "wet": "Natte bodems",
+    "grassland": "Graslandzwammen",
 }
 
 # ── Score weights per guild ──────────────────────────────────────────────
@@ -116,38 +116,38 @@ TAXA = [
 ATTRIBUTIONS = [
     {
         "id": "gbif",
-        "label": "Observation data: Observation.org / GBIF (CC BY-NC 4.0)",
+        "label": "Waarnemingen: Observation.org / GBIF (CC BY-NC 4.0)",
         "url": "https://www.gbif.org/dataset/10.15468/5nilie",
         "licence": "CC BY-NC 4.0",
     },
     {
         "id": "pdok",
-        "label": "Kadaster / PDOK (BRT, AHN, BRO, BGT) — CC BY 4.0",
+        "label": "Kaart: Kadaster / PDOK (CC BY 4.0)",
         "url": "https://www.pdok.nl/copyright",
         "licence": "CC BY 4.0",
     },
     {
         "id": "osm",
-        "label": "OpenStreetMap contributors (ODbL)",
+        "label": "OpenStreetMap (ODbL)",
         "url": "https://www.openstreetmap.org/copyright",
         "licence": "ODbL 1.0",
     },
     {
         "id": "knmi",
-        "label": "KNMI open data — CC BY 4.0",
+        "label": "KNMI open data (CC BY 4.0)",
         "url": "https://dataplatform.knmi.nl",
         "licence": "CC BY 4.0",
     },
     {
         "id": "openmeteo",
-        "label": "Weather: Open-Meteo (CC BY 4.0, non-commercial)",
+        "label": "Weer: Open-Meteo (CC BY 4.0)",
         "url": "https://open-meteo.com/",
         "licence": "CC BY 4.0",
     },
     {
         # Observation photos are CC BY-NC-ND and are deliberately not used.
         "id": "wikimedia",
-        "label": "Species photos: Wikimedia Commons (free licences, see each file)",
+        "label": "Foto's: Wikimedia Commons",
         "url": "https://commons.wikimedia.org/",
         "licence": "varies per file",
     },

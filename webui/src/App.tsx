@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CloudRain,
   Database,
-  Leaf,
   Loader2,
   MapPin,
   Moon,
@@ -13,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { MushroomIcon } from "@/components/MushroomIcon"
 import { MapView } from "@/components/MapView"
 import {
   cancelRun,
@@ -60,14 +60,38 @@ function addDays(iso: string, days: number): string {
 }
 
 function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "never"
+  if (!iso) return "nooit"
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
-  if (mins < 1) return "just now"
-  if (mins < 60) return `${mins} min ago`
+  if (mins < 1) return "net"
+  if (mins < 60) return `${mins} min`
   const hours = Math.round(mins / 60)
-  if (hours < 24) return `${hours} h ago`
-  return `${Math.round(hours / 24)} d ago`
+  if (hours < 24) return `${hours} u`
+  return `${Math.round(hours / 24)} d`
 }
+
+// Geocoders leveren een mix van Nederlandse en Engelse types.
+const TYPE_NL: Record<string, string> = {
+  water: "water",
+  protected_area: "natuurgebied",
+  nature_reserve: "natuurgebied",
+  forest: "bos",
+  heath: "heide",
+  park: "park",
+  administrative: "gebied",
+  municipality: "gemeente",
+  village: "dorp",
+  hamlet: "buurtschap",
+  city: "stad",
+  town: "plaats",
+  weg: "weg",
+  adres: "adres",
+  perceel: "perceel",
+  postcode: "postcode",
+  woonplaats: "woonplaats",
+  gemeente: "gemeente",
+  provincie: "provincie",
+}
+const typeNl = (t: string) => TYPE_NL[(t || "").toLowerCase()] ?? t
 
 function phaseTone(seasonal: number): string {
   if (seasonal >= 0.7) return "bg-primary/15 text-primary"
@@ -232,12 +256,12 @@ export function App() {
             setExpect(null)
           }}
           className="flex shrink-0 items-center gap-2"
-          title="Start over"
+          title="Opnieuw beginnen"
         >
           <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Leaf className="size-4" />
+            <MushroomIcon className="size-4" />
           </span>
-          <span className="hidden text-sm font-semibold sm:inline">Mushroom Finder</span>
+          <span className="hidden text-sm font-semibold sm:inline">Paddenstoelenzoeker</span>
         </button>
 
         <div ref={boxRef} className="relative min-w-0 flex-1 md:max-w-xl">
@@ -246,7 +270,7 @@ export function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => suggestions.length && setOpen(true)}
-            placeholder="Search a place — e.g. Hemelriek, Veluwe, Gasselte"
+            placeholder="Zoek een plek, bijvoorbeeld Hemelriek of Gasselte"
             className="h-9 w-full rounded-lg border border-border bg-background pl-9 pr-8 text-sm"
           />
           {searching && (
@@ -264,7 +288,7 @@ export function App() {
                   <span className="min-w-0">
                     <span className="block truncate">{s.name}</span>
                     <span className="block text-[11px] text-muted-foreground">
-                      {[s.type, s.municipality, s.province].filter(Boolean).join(" · ")}
+                      {[typeNl(s.type), s.municipality, s.province].filter(Boolean).join(" · ")}
                       {" · "}
                       {s.source}
                     </span>
@@ -281,26 +305,26 @@ export function App() {
             size="sm"
             onClick={() => trigger("weather")}
             disabled={busy === "weather" || !!activeRun}
-            title="Refresh current weather"
+            title="Weer bijwerken"
           >
             {busy === "weather" ? <Loader2 className="animate-spin" /> : <CloudRain />}
-            <span className="hidden lg:inline">Weather</span>
+            <span className="hidden lg:inline">Weer</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => trigger("historical")}
             disabled={busy === "historical" || !!activeRun}
-            title="Re-import historical observations"
+            title="Waarnemingen opnieuw inladen"
           >
             {busy === "historical" ? <Loader2 className="animate-spin" /> : <Database />}
-            <span className="hidden lg:inline">Historical</span>
+            <span className="hidden lg:inline">Historie</span>
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title="Toggle theme"
+            title="Licht of donker"
           >
             {theme === "dark" ? <Sun /> : <Moon />}
           </Button>
@@ -310,7 +334,7 @@ export function App() {
       {activeRun && (
         <div className="flex items-center gap-2 border-b bg-accent/30 px-3 py-1.5 text-xs">
           <Loader2 className="size-3.5 animate-spin" />
-          <span className="font-medium">{activeRun.kind}</span>
+          <span className="font-medium">{activeRun.kind === "weather" ? "Weer" : "Historie"}</span>
           <span className="text-muted-foreground">
             {activeRun.phase} · {Math.round((activeRun.progress ?? 0) * 100)}%
             {activeRun.message ? ` · ${activeRun.message}` : ""}
@@ -324,7 +348,7 @@ export function App() {
               await loadRuns()
             }}
           >
-            Cancel
+            Stop
           </Button>
         </div>
       )}
@@ -355,14 +379,14 @@ export function App() {
                 {expectLoading ? (
                   <div className="grid place-items-center py-20 text-sm text-muted-foreground">
                     <Loader2 className="mb-2 size-5 animate-spin" />
-                    Looking up what is recorded here…
+                    Bezig met opzoeken wat hier bekend is…
                   </div>
                 ) : !expect || expect.species.length === 0 ? (
                   <Card>
                     <CardContent className="py-8 text-center text-sm text-muted-foreground">
                       {expect && expect.known_total > 0
-                        ? `${expect.known_total} species are known within ${radiusKm} km, but none is typically fruiting around ${viewDate} (week ${expect.week}). Try another date.`
-                        : `No curated species recorded within ${radiusKm} km of this place yet. Records are sparse in some areas; try a larger radius.`}
+                        ? `${expect.known_total} soorten zijn hier bekend, maar rond ${viewDate} (week ${expect.week}) is daarvan niets op z'n best. Probeer een andere datum.`
+                        : `Binnen ${radiusKm} km van deze plek staat nog niets in de lijst. Probeer een grotere straal.`}
                     </CardContent>
                   </Card>
                 ) : (
@@ -393,8 +417,8 @@ export function App() {
                 </span>
               ))}
               <div className="mt-1">
-                Historical data {relativeTime(meta?.datasets?.[0]?.last_success_at)} ·
-                weather {relativeTime(meta?.weather?.as_of)} · model{" "}
+                Waarnemingen {relativeTime(meta?.datasets?.[0]?.last_success_at)} ·
+                weer {relativeTime(meta?.weather?.as_of)} · model{" "}
                 {meta?.model_version} {me?.email ? `· ${me.email}` : ""}
               </div>
             </footer>
@@ -408,15 +432,14 @@ export function App() {
 function Welcome({ onExample }: { onExample: (q: string) => void }) {
   return (
     <div className="hero mx-auto flex max-w-3xl flex-col items-center px-6 py-20 text-center">
-      <Leaf className="size-8 text-primary" />
+      <MushroomIcon className="size-10 text-primary" />
       <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-        What is fruiting where you are going?
+        Wat staat er waar je heen gaat?
       </h1>
-      <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-        Search a place in the Netherlands. You get the curated species recorded
-        around it, ranked by how close today is to each one's fruiting peak,
-        plus what has been reported nearby recently. Current weather is shown as
-        context — it is not yet reliable enough to change the ranking.
+      <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+        Zoek een plek in Nederland. Je krijgt de soorten die daar bekend zijn,
+        op volgorde van hoe dicht ze bij hun piek zitten. Daaronder wat er de
+        laatste tijd in de buurt gemeld is.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         {EXAMPLES.map((e) => (
@@ -424,17 +447,12 @@ function Welcome({ onExample }: { onExample: (q: string) => void }) {
             key={e}
             className="rounded-full border px-3 py-1 text-xs hover:bg-muted"
             onClick={() => onExample(e)}
-            title="Fill the search box"
+            title="Vul het zoekveld"
           >
             {e}
           </button>
         ))}
       </div>
-      <p className="mt-8 max-w-lg text-xs text-muted-foreground">
-        Honest limits: Dutch records are generalised to ~5 km, so this tells you
-        which species are plausible in the area and in season — never a specific
-        mushroom, and never a guarantee.
-      </p>
     </div>
   )
 }
@@ -463,7 +481,7 @@ function PlaceHeader({
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">{place.name}</h2>
             <p className="text-xs text-muted-foreground">
-              {[place.type, place.municipality, place.province].filter(Boolean).join(" · ")}
+              {[typeNl(place.type), place.municipality, place.province].filter(Boolean).join(" · ")}
               {" · "}
               {place.lat.toFixed(4)}, {place.lon.toFixed(4)}
             </p>
@@ -471,7 +489,7 @@ function PlaceHeader({
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <label className="flex items-center gap-1.5">
-              radius
+              straal
               <select
                 value={radiusKm}
                 onChange={(e) => onRadius(Number(e.target.value))}
@@ -484,7 +502,7 @@ function PlaceHeader({
               </select>
             </label>
             <label className="flex items-center gap-1.5">
-              date
+              datum
               <input
                 type="date"
                 value={viewDate}
@@ -499,7 +517,7 @@ function PlaceHeader({
                 variant={viewDate === todayIso() ? "secondary" : "ghost"}
                 onClick={() => onDate(todayIso())}
               >
-                Now
+                Nu
               </Button>
               <Button size="sm" variant="ghost" onClick={() => onDate(addDays(todayIso(), 7))}>
                 +1 wk
@@ -518,25 +536,25 @@ function PlaceHeader({
           {result && <Badge>week {result.week}</Badge>}
           {result && (
             <Badge className={result.is_future ? "bg-accent/50 text-accent-foreground" : ""}>
-              {result.is_future ? "projected for that date" : "date is today or past"}
+              {result.is_future ? "verwachting voor die datum" : "datum is vandaag of eerder"}
             </Badge>
           )}
-          <Badge>{result?.known_total ?? 0} species known here</Badge>
+          <Badge>{result?.known_total ?? 0} soorten bekend hier</Badge>
           {weather?.as_of && (
             <>
-              <Badge>rain 14d {weather.precip_14d ?? 0} mm</Badge>
-              <Badge>{weather.dry_days ?? 0} dry days</Badge>
+              <Badge>regen 14 d {weather.precip_14d ?? 0} mm</Badge>
+              <Badge>{weather.dry_days ?? 0} droge dagen</Badge>
               {weather.temp_c !== undefined && <Badge>{weather.temp_c} °C</Badge>}
               {weather.soil_moisture !== undefined && (
-                <Badge>soil {Math.round((weather.soil_moisture ?? 0) * 100)}%</Badge>
+                <Badge>bodem {Math.round((weather.soil_moisture ?? 0) * 100)}%</Badge>
               )}
             </>
           )}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Season fit comes from national records for the selected week, so it
-          projects future dates. Weather (always today's) is context only, not
-          part of the ranking.
+          De seizoensscore komt uit landelijke waarnemingen van de gekozen week,
+          dus je kunt ook vooruitkijken. Het weer hierboven is van vandaag en
+          telt niet mee in de volgorde.
         </p>
       </CardContent>
     </Card>
@@ -548,9 +566,9 @@ function LikelyList({ data }: { data: ExpectResult }) {
     <Card>
       <CardContent className="pt-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold">Likely this week</h3>
+          <h3 className="text-sm font-semibold">Waarschijnlijk deze periode</h3>
           <span className="text-[11px] text-muted-foreground">
-            ranked by season fit × local evidence
+            op seizoen en eerdere meldingen
           </span>
         </div>
         <ol className="space-y-1.5">
@@ -576,7 +594,7 @@ function LikelyList({ data }: { data: ExpectResult }) {
                 </a>
               ) : (
                 <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                  <Leaf className="size-4" />
+                  <MushroomIcon className="size-5" />
                 </span>
               )}
               <span className="min-w-0 flex-1">
@@ -588,10 +606,10 @@ function LikelyList({ data }: { data: ExpectResult }) {
                     {s.name_nl ?? s.scientific_name}
                   </span>
                   <Badge className={phaseTone(s.seasonal)}>{s.phase}</Badge>
-                  <Badge>{Math.round(s.seasonal * 100)}% of peak</Badge>
+                  <Badge>{Math.round(s.seasonal * 100)}% van piek</Badge>
                   {s.period_records > 0 && (
                     <Badge className="bg-accent/50 text-accent-foreground">
-                      {s.period_records}× reported around then
+                      {s.period_records}× gemeld rond die tijd
                     </Badge>
                   )}
                 </span>
@@ -630,15 +648,15 @@ function RecentCard({
     <Card>
       <CardContent className="pt-4">
         <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold">Recently reported nearby</h3>
+          <h3 className="text-sm font-semibold">Recent gemeld in de buurt</h3>
           <span className="text-[11px] text-muted-foreground">
-            {reports.length} in 90 days
+            {reports.length} in 90 dagen
           </span>
         </div>
         {reports.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            Nothing reported within {radiusKm} km in the last 90 days. Try a
-            larger radius — recent coverage is thin.
+            Geen meldingen binnen {radiusKm} km in de laatste 90 dagen. Probeer
+            een grotere straal.
           </p>
         ) : (
           <ul className="space-y-1">
@@ -658,7 +676,7 @@ function RecentCard({
                     {r.name_nl ?? r.scientific_name}
                   </span>
                   <span className="block text-[11px] text-muted-foreground">
-                    {r.observed_on} · {r.precise ? "1 km precise" : "5 km area"}
+                    {r.observed_on} · {r.precise ? "1 km nauwkeurig" : "5 km vak"}
                   </span>
                 </span>
               </li>
@@ -667,8 +685,8 @@ function RecentCard({
         )}
         {reports.length > 0 && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Someone saw one here recently — worth a look, not proof it is still
-            fruiting.
+            Iemand zag hier recent wat. De moeite waard, maar geen bewijs dat
+            het er nog staat.
           </p>
         )}
       </CardContent>

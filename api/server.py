@@ -540,23 +540,23 @@ def expect_here(conn, lat: float, lon: float, radius_m: int,
         confidence = min(1.0, math.log1p(row["n"]) / math.log1p(50.0))
         expected = seasonal * (0.4 + 0.6 * confidence)
         if seasonal >= 0.7:
-            phase = "at peak"
+            phase = "op z'n best"
         elif seasonal >= 0.35:
-            phase = "in season"
+            phase = "in seizoen"
         elif seasonal >= 0.10:
-            phase = "starting / ending"
+            phase = "komt op of loopt af"
         else:
-            phase = "out of season"
+            phase = "buiten seizoen"
         last_seen = row["last_seen"]
         days_ago = (dt.date.today() - last_seen).days if last_seen else None
         reasons = [
-            "{} ({}% of its peak week)".format(phase, round(seasonal * 100)),
-            "{} records within {} km".format(row["n"], radius_m // 1000),
+            "{} ({}% van z'n piekweek)".format(phase, round(seasonal * 100)),
+            "{} waarnemingen binnen {} km".format(row["n"], radius_m // 1000),
         ]
         if days_ago is not None:
             reasons.append(
-                "last reported here {}".format(
-                    "today" if days_ago <= 1 else "{} days ago".format(days_ago)
+                "laatst gemeld {}".format(
+                    "vandaag" if days_ago <= 1 else "{} dagen geleden".format(days_ago)
                 )
             )
         act = actuals.get(row["id"]) or {}
