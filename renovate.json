@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "labels": ["dependencies", "renovate"],
+  "enabledManagers": ["kubernetes", "npm", "github-actions"],
+  "kubernetes": {
+    "fileMatch": ["base/.+\\.ya?ml$"]
+  },
+  "prCreation": "immediate",
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 2,
+  "separateMajorMinor": true,
+  "packageRules": [
+    {
+      "description": "Automerge safe image/action updates (non-major); the validate workflow builds the manifests",
+      "matchManagers": ["kubernetes", "github-actions"],
+      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "npm bumps change the built bundle and the committed ConfigMaps; keep them manual",
+      "matchManagers": ["npm"],
+      "automerge": false
+    }
+  ]
+}

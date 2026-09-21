@@ -1,4 +1,10 @@
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Local/CI entry point (`kubectl kustomize .`). nebula deploys ./base with its own
+# Flux Kustomization (kubernetes/apps/services/mushroom-finder/ks.yaml), which also
+# supplies targetNamespace: services and ${...} substitution from the
+# cluster-secrets Secret - neither of which a plain kustomize build has, so treat
+# this as a syntax check.
 resources:
-  - ks.yaml
+  - ./base

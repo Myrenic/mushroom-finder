@@ -1,6 +1,11 @@
 # Mushroom Finder
 
-A private, household-only web app that ranks where in the Netherlands it is
+Source and Kubernetes manifests for the public mushroom map behind
+`https://mushrooms.<domain>`. The cluster that runs it is
+[nebula](https://github.com/Myrenic/nebula); platform pieces (Traefik, cert-manager,
+Longhorn, the shared secrets) live there.
+
+A household-built web app that ranks where in the Netherlands it is
 worth searching for macro fungi — for photography, not for picking.
 
 It combines open Dutch data into two clearly separated layers:
@@ -17,7 +22,8 @@ claims of exact occurrence, no sensitive-species locations.
 
 - Not a foraging or collection tool.
 - Not a source of exact mushroom coordinates.
-- Not a public website (behind Keycloak via oauth2-proxy).
+- Not a source of exact coordinates, and not an authenticated app: the
+  map is public and read-only on purpose (see Deploy).
 - Not a photo library (v1 finds places only).
 
 ## Architecture
@@ -66,27 +72,51 @@ kubectl -n services create secret generic mushroom-finder-db \
 ## Build
 
 ```bash
-# worker + api + migrations ConfigMaps
+# worker + api + migrations ConfigMaps (writes base/*.configmap.json)
 node scripts/build-worker-configmaps.mjs
 
 # SPA bundle (writes base/www + base/webui.configmap.json)
-cd webui && npm install && npm run build && cd ..
+cd webui && npm ci && npm run build && cd ..
 
-# tests
+# tests (plain assert scripts, no framework)
 python3 tests/test_scoring.py
+python3 tests/test_analytics.py
 
 # manifest validation
-kubectl kustomize kubernetes/apps >/dev/null
+kubectl kustomize . >/dev/null
 ```
 
-## Deploy (Flux)
+## Layout
+
+| Path | What |
+| --- | --- |
+| `api/` | FastAPI service, shipped as `base/api.configmap.json` |
+| `worker/` | refresh pipelines, shipped as `base/worker.configmap.json` |
+| `migrations/` | SQL migrations, shipped as `base/migrations.configmap.json` |
+| `webui/` | SPA source, builds into `base/www` |
+| `base/` | Kubernetes manifests - this is what nebula deploys |
+| `tests/` | assert-based checks for scoring and analytics |
+
+The ConfigMaps and `base/www` are committed on purpose (kustomize cannot reference
+files outside its own directory). CI rebuilds them and fails on a diff, so run the
+build before committing.
+
+## Deploy
+
+The cluster is **[nebula](https://github.com/Myrenic/nebula)**. Flux there reads this
+repository and deploys `./base`:
+
+```
+nebula/kubernetes/apps/services/mushroom-finder/source.yaml  -> GitRepository (this repo, branch main)
+nebula/kubernetes/apps/services/mushroom-finder/ks.yaml      -> Kustomization, path ./base,
+                                                                targetNamespace: services,
+                                                                dependsOn: longhorn,
+                                                                postBuild.substituteFrom: cluster-secrets
+```
+
+Push here, then either wait for the 1 minute poll or force it:
 
 ```bash
-git add -A kubernetes/apps/services/mushroom-finder \
-          kubernetes/apps/services/kustomization.yaml \
-          kubernetes/apps/network/ingressroutes/mushroom-finder.yaml \
-          kubernetes/apps/network/ingressroutes/kustomization.yaml
-git commit -m "feat(mushroom-finder): add mushroom search-priority app"
 flux reconcile kustomization mushroom-finder -n flux-system --with-source
 kubectl -n services rollout status deploy/mushroom-finder --timeout=180s
 kubectl -n services rollout status deploy/mushroom-finder-postgres --timeout=180s
@@ -95,7 +125,10 @@ kubectl -n services rollout status deploy/mushroom-finder-postgres --timeout=180
 ConfigMap changes do not hot-reload: `kubectl -n services rollout restart
 deploy/mushroom-finder` after rebuilding.
 
-The app is served at `https://mushrooms.${SECRET_DOMAIN_0}`.
+The app is served at `https://mushrooms.${SECRET_DOMAIN_0}`. It is public and
+read-only (no oauth2-proxy on that route, no exact coordinates, per-IP rate limit);
+the platform pieces that make it public - the IngressRoute and the auth chain - live
+in nebula.
 
 ## First run
 

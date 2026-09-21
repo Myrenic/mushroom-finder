@@ -1,0 +1,70 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+
+      - name: Manifests build
+        run: kubectl kustomize . >/dev/null
+
+      - name: Scoring and analytics checks
+        run: |
+          python3 tests/test_scoring.py
+          python3 tests/test_analytics.py
+
+      - name: Committed files hold no plaintext secrets
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r file; do
+            case "$file" in
+              *.sops.yaml) continue ;;
+            esac
+            if grep -nE '^[[:space:]]+(token|password|passphrase|secret|api[-_]?key|.*_SECRET|.*_TOKEN|.*_KEY):[[:space:]]*"?[A-Za-z0-9+/=_-]{16,}' "$file" >/dev/null; then
+              echo "::error file=$file::looks like a plaintext secret"
+              status=1
+            fi
+          done < <(git ls-files 'base/*.yaml')
+          exit "$status"
+
+      - name: ConfigMap bundles and SPA rebuild byte-identically
+        run: |
+          set -euo pipefail
+          node scripts/build-worker-configmaps.mjs
+          cd webui
+          npm ci
+          npm run build
+          cd ..
+          if ! git diff --quiet; then
+            echo "::error::build output differs from the committed bundles - run the build and commit"
+            git --no-pager diff --stat
+            exit 1
+          fi
