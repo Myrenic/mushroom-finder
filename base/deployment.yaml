@@ -32,7 +32,7 @@ spec:
         # custom image registry, so dependencies are installed into the pod
         # instead of being baked into an image.
         - name: deps
-          image: docker.io/library/python:3.12-slim
+          image: docker.io/library/python:3.14-slim
           command:
             - /bin/sh
             - -c
@@ -89,7 +89,7 @@ spec:
         # API: serves hotspots/weather/refresh state and triggers refresh Jobs
         # through the Kubernetes API using its narrowly-scoped ServiceAccount.
         - name: api
-          image: docker.io/library/python:3.12-slim
+          image: docker.io/library/python:3.14-slim
           command: ["python3", "/app/server.py"]
           ports:
             - name: api

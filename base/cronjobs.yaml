@@ -37,7 +37,7 @@ spec:
               type: RuntimeDefault
           initContainers:
             - name: deps
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command:
                 - /bin/sh
                 - -c
@@ -59,7 +59,7 @@ spec:
                   drop: ["ALL"]
           containers:
             - name: worker
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command: ["python3", "/app/run_refresh.py", "--kind=weather"]
               env:
                 - name: PYTHONPATH
@@ -140,7 +140,7 @@ spec:
               type: RuntimeDefault
           initContainers:
             - name: deps
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command:
                 - /bin/sh
                 - -c
@@ -162,7 +162,7 @@ spec:
                   drop: ["ALL"]
           containers:
             - name: worker
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command: ["python3", "/app/run_refresh.py", "--kind=historical"]
               env:
                 - name: PYTHONPATH
@@ -242,7 +242,7 @@ spec:
               type: RuntimeDefault
           initContainers:
             - name: deps
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command:
                 - /bin/sh
                 - -c
@@ -264,7 +264,7 @@ spec:
                   drop: ["ALL"]
           containers:
             - name: worker
-              image: docker.io/library/python:3.12-slim
+              image: docker.io/library/python:3.14-slim
               command: ["python3", "/app/run_refresh.py", "--kind=maintenance"]
               env:
                 - name: PYTHONPATH
